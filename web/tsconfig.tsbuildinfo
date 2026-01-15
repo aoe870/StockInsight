@@ -1,0 +1,1 @@
+{"root":["./src/main.ts","./src/vite-env.d.ts","./src/api/index.ts","./src/router/index.ts","./src/app.vue","./src/components/klinechart.vue","./src/layouts/mainlayout.vue","./src/views/alertsview.vue","./src/views/marketview.vue","./src/views/screenerview.vue","./src/views/stockdetailview.vue","./src/views/watchlistview.vue"],"version":"5.7.3"}
