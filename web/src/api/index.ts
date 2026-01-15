@@ -75,6 +75,18 @@ export interface StockQuote {
   trade_date: string
 }
 
+// 分时数据类型
+export interface MinuteData {
+  time: string
+  open: number
+  close: number
+  high: number
+  low: number
+  volume: number
+  amount: number
+  avg_price?: number
+}
+
 export const stockApi = {
   // 获取股票列表
   getList: (params: StockListParams) =>
@@ -87,6 +99,10 @@ export const stockApi = {
   // 获取K线数据
   getKLine: (code: string, params?: { start_date?: string; end_date?: string; adjust?: string; period?: string; limit?: number }) =>
     api.get<any, { code: string; name: string; adjust: string; period: string; data: KLineData[] }>(`/stocks/${code}/kline`, { params }),
+
+  // 获取分时数据
+  getMinuteData: (code: string, period?: string) =>
+    api.get<any, { code: string; name: string; period: string; data: MinuteData[] }>(`/stocks/${code}/minute`, { params: { period: period || '1' } }),
 
   // 获取技术指标（基础）
   getIndicators: (code: string, params?: { indicators?: string; period?: number }) =>

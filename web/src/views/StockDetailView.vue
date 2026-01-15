@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ref, onMounted, onUnmounted, watch, computed } from 'vue'
 import { useRoute } from 'vue-router'
-import { stockApi, watchlistApi, type KLineData } from '@/api'
+import { stockApi, watchlistApi, type KLineData, type MinuteData } from '@/api'
 import { ElMessage } from 'element-plus'
 import { Star, StarFilled, RefreshRight } from '@element-plus/icons-vue'
 import KLineChart from '@/components/KLineChart.vue'
@@ -11,17 +11,21 @@ const loading = ref(false)
 const stockCode = ref('')
 const stockName = ref('')
 const klineData = ref<KLineData[]>([])
+const minuteData = ref<MinuteData[]>([])
 const indicatorData = ref<Record<string, any>[]>([])
 const adjust = ref('qfq') // 默认使用前复权（与 sync_all_klines.py 同步的数据一致）
 const period = ref('daily')
 const selectedIndicators = ref(['MA', 'VOL', 'MACD'])
 const isInWatchlist = ref(false)
 
-// 自动刷新控制
-const autoRefresh = ref(true)
-const refreshInterval = ref(60) // 秒
+// 自动刷新控制 - 只在分时模式下启用
+const autoRefresh = ref(false)
+const refreshInterval = ref(10) // 分时数据刷新间隔（秒）
 const lastRefreshTime = ref<Date | null>(null)
 let refreshTimer: ReturnType<typeof setInterval> | null = null
+
+// 是否是分时模式
+const isMinuteMode = computed(() => period.value === 'minute')
 
 const adjustOptions = [
   { label: '后复权', value: 'hfq' },
@@ -39,7 +43,7 @@ const dataRangeOptions = [
   { label: '全部', value: 10000 },
 ]
 
-// 获取 K 线和指标数据
+// 获取 K 线数据
 const fetchKLine = async (showLoading = true) => {
   if (!stockCode.value) return
   if (showLoading) loading.value = true
@@ -63,15 +67,54 @@ const fetchKLine = async (showLoading = true) => {
   }
 }
 
-// 静默刷新（不显示loading）
-const silentRefresh = () => {
-  fetchKLine(false)
+// 获取分时数据
+const fetchMinuteData = async (showLoading = true) => {
+  if (!stockCode.value) return
+  if (showLoading) loading.value = true
+  try {
+    const res = await stockApi.getMinuteData(stockCode.value, '1')
+    stockName.value = res.name
+    minuteData.value = res.data
+    // 转换分时数据为 KLineData 格式以兼容图表
+    klineData.value = res.data.map(d => ({
+      trade_date: d.time,
+      open: d.open,
+      close: d.close,
+      high: d.high,
+      low: d.low,
+      volume: d.volume,
+      amount: d.amount,
+      change_pct: 0,
+    }))
+    lastRefreshTime.value = new Date()
+    // 分时模式不获取指标数据
+    indicatorData.value = []
+  } catch (error) {
+    console.error('获取分时数据失败:', error)
+    if (showLoading) ElMessage.error('获取分时数据失败')
+  } finally {
+    loading.value = false
+  }
 }
 
-// 启动自动刷新
+// 获取数据（根据周期类型选择）
+const fetchData = async (showLoading = true) => {
+  if (isMinuteMode.value) {
+    await fetchMinuteData(showLoading)
+  } else {
+    await fetchKLine(showLoading)
+  }
+}
+
+// 静默刷新（不显示loading）
+const silentRefresh = () => {
+  fetchData(false)
+}
+
+// 启动自动刷新（仅分时模式）
 const startAutoRefresh = () => {
   stopAutoRefresh()
-  if (autoRefresh.value) {
+  if (autoRefresh.value && isMinuteMode.value) {
     refreshTimer = setInterval(silentRefresh, refreshInterval.value * 1000)
   }
 }
@@ -84,8 +127,12 @@ const stopAutoRefresh = () => {
   }
 }
 
-// 切换自动刷新
+// 切换自动刷新（仅分时模式有效）
 const toggleAutoRefresh = () => {
+  if (!isMinuteMode.value) {
+    ElMessage.warning('自动刷新仅在分时模式下可用')
+    return
+  }
   autoRefresh.value = !autoRefresh.value
   if (autoRefresh.value) {
     startAutoRefresh()
@@ -100,7 +147,7 @@ const toggleAutoRefresh = () => {
 const handleVisibilityChange = () => {
   if (document.hidden) {
     stopAutoRefresh()
-  } else if (autoRefresh.value) {
+  } else if (autoRefresh.value && isMinuteMode.value) {
     silentRefresh() // 页面恢复时立即刷新一次
     startAutoRefresh()
   }
@@ -112,9 +159,9 @@ const lastRefreshTimeText = computed(() => {
   return lastRefreshTime.value.toLocaleTimeString()
 })
 
-// 获取指标数据
+// 获取指标数据（分时模式不获取）
 const fetchIndicators = async () => {
-  if (!stockCode.value || selectedIndicators.value.length === 0) {
+  if (!stockCode.value || selectedIndicators.value.length === 0 || isMinuteMode.value) {
     indicatorData.value = []
     return
   }
@@ -132,13 +179,32 @@ const fetchIndicators = async () => {
 
 // 数据范围变化
 const onDataRangeChange = () => {
-  fetchKLine()
+  fetchData()
 }
 
 // 周期变化
 const onPeriodChange = async (newPeriod: string) => {
+  const wasMinuteMode = isMinuteMode.value
   period.value = newPeriod
-  await fetchKLine()
+
+  // 如果从分时切换到其他模式，停止自动刷新
+  if (wasMinuteMode && !isMinuteMode.value) {
+    autoRefresh.value = false
+    stopAutoRefresh()
+  }
+
+  // 如果切换到分时模式，自动开启刷新
+  if (!wasMinuteMode && isMinuteMode.value) {
+    autoRefresh.value = true
+  }
+
+  // 获取数据
+  await fetchData()
+
+  // 分时模式启动自动刷新
+  if (isMinuteMode.value && autoRefresh.value) {
+    startAutoRefresh()
+  }
 }
 
 // 指标变化
@@ -176,12 +242,19 @@ const priceChange = () => {
 watch(() => route.params.code, (newCode) => {
   if (newCode) {
     stockCode.value = newCode as string
-    fetchKLine()
-    startAutoRefresh()
+    // 初始加载时使用日K（非分时模式，不自动刷新）
+    period.value = 'daily'
+    autoRefresh.value = false
+    fetchData()
   }
 }, { immediate: true })
 
-watch(adjust, () => fetchKLine())
+// 复权类型变化时重新获取数据（分时模式不需要）
+watch(adjust, () => {
+  if (!isMinuteMode.value) {
+    fetchKLine()
+  }
+})
 
 onMounted(() => {
   document.addEventListener('visibilitychange', handleVisibilityChange)
@@ -226,12 +299,13 @@ onUnmounted(() => {
     <el-card class="chart-card" v-loading="loading">
       <template #header>
         <div class="chart-header">
-          <span>K线图</span>
+          <span>{{ isMinuteMode ? '分时图' : 'K线图' }}</span>
           <div class="chart-controls">
             <span v-if="lastRefreshTimeText" class="refresh-time">
               更新: {{ lastRefreshTimeText }}
             </span>
-            <el-select v-model="dataRange" size="small" style="width: 100px" @change="onDataRangeChange">
+            <!-- 数据范围选择：分时模式不显示 -->
+            <el-select v-if="!isMinuteMode" v-model="dataRange" size="small" style="width: 100px" @change="onDataRangeChange">
               <el-option
                 v-for="opt in dataRangeOptions"
                 :key="opt.value"
@@ -239,7 +313,8 @@ onUnmounted(() => {
                 :value="opt.value"
               />
             </el-select>
-            <el-select v-model="adjust" size="small" style="width: 100px">
+            <!-- 复权类型选择：分时模式不显示 -->
+            <el-select v-if="!isMinuteMode" v-model="adjust" size="small" style="width: 100px">
               <el-option
                 v-for="opt in adjustOptions"
                 :key="opt.value"
@@ -247,10 +322,12 @@ onUnmounted(() => {
                 :value="opt.value"
               />
             </el-select>
-            <el-button :icon="RefreshRight" size="small" @click="() => fetchKLine()">
+            <el-button :icon="RefreshRight" size="small" @click="() => fetchData()">
               刷新
             </el-button>
+            <!-- 自动刷新按钮：仅分时模式显示 -->
             <el-button
+              v-if="isMinuteMode"
               size="small"
               :type="autoRefresh ? 'success' : 'info'"
               @click="toggleAutoRefresh"

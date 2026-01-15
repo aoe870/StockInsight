@@ -2,13 +2,14 @@
 股票数据 API 路由
 """
 
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
 from typing import Optional, List
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 import pandas as pd
+import akshare as ak
 
 from src.core.database import get_db
 from src.core.indicators import TechnicalIndicators, SignalDetector
@@ -268,6 +269,79 @@ def _aggregate_kline(daily_data: List[KLineData], period: str) -> List[KLineData
         ))
 
     return result
+
+
+@router.get("/{code}/minute")
+async def get_minute_data(
+    code: str,
+    period: str = Query("1", description="分钟周期: 1/5/15/30/60"),
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    获取分时数据（实时从 AKShare 获取）
+
+    - period: 1/5/15/30/60 分钟
+    - 数据来源：东方财富，只返回近期数据
+    """
+    # 获取股票信息
+    stock_result = await db.execute(
+        select(StockBasics).where(StockBasics.code == code)
+    )
+    stock = stock_result.scalar_one_or_none()
+    if not stock:
+        raise HTTPException(status_code=404, detail=f"股票 {code} 不存在")
+
+    try:
+        # 使用东财分时接口
+        now = datetime.now()
+        # 获取当天数据（如果是交易日）
+        start_date = now.strftime("%Y-%m-%d 09:30:00")
+        end_date = now.strftime("%Y-%m-%d 15:00:00")
+
+        df = ak.stock_zh_a_hist_min_em(
+            symbol=code,
+            start_date=start_date,
+            end_date=end_date,
+            period=period,
+            adjust=""  # 分时数据不复权
+        )
+
+        if df.empty:
+            # 如果当天没有数据，获取最近的分时数据
+            yesterday = (now - timedelta(days=1)).strftime("%Y-%m-%d 09:30:00")
+            yesterday_end = (now - timedelta(days=1)).strftime("%Y-%m-%d 15:00:00")
+            df = ak.stock_zh_a_hist_min_em(
+                symbol=code,
+                start_date=yesterday,
+                end_date=yesterday_end,
+                period=period,
+                adjust=""
+            )
+
+        # 转换数据格式
+        data = []
+        for _, row in df.iterrows():
+            time_str = str(row.get("时间", ""))
+            data.append({
+                "time": time_str,
+                "open": float(row.get("开盘", 0)),
+                "close": float(row.get("收盘", 0)),
+                "high": float(row.get("最高", 0)),
+                "low": float(row.get("最低", 0)),
+                "volume": int(row.get("成交量", 0)),
+                "amount": float(row.get("成交额", 0)),
+                "avg_price": float(row.get("均价", 0)) if "均价" in row else None,
+            })
+
+        return {
+            "code": code,
+            "name": stock.name,
+            "period": period,
+            "data": data
+        }
+    except Exception as e:
+        logger.error(f"获取分时数据失败: {code}, 错误: {e}")
+        raise HTTPException(status_code=500, detail=f"获取分时数据失败: {str(e)}")
 
 
 @router.get("/{code}/indicators", response_model=IndicatorResponse)

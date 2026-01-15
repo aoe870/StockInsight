@@ -20,6 +20,7 @@ let chart: echarts.ECharts | null = null
 
 // 周期选项
 const periods = [
+  { label: '分时', value: 'minute' },
   { label: '日K', value: 'daily' },
   { label: '周K', value: 'weekly' },
   { label: '月K', value: 'monthly' },
