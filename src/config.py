@@ -54,6 +54,12 @@ class Settings(BaseSettings):
     trading_start_pm: str = Field(default="13:00", description="下午开盘时间")
     trading_end_pm: str = Field(default="15:00", description="下午收盘时间")
 
+    # Redis 配置
+    redis_host: str = Field(default="localhost", description="Redis 主机")
+    redis_port: int = Field(default=6379, description="Redis 端口")
+    redis_db: int = Field(default=0, description="Redis 数据库")
+    redis_password: str = Field(default="", description="Redis 密码")
+
     # JWT 配置
     jwt_secret_key: str = Field(default="jwt-secret-key-change-in-production", description="JWT密钥")
     jwt_algorithm: str = Field(default="HS256", description="JWT算法")

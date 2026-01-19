@@ -18,11 +18,11 @@ const period = ref('daily')
 const selectedIndicators = ref(['MA', 'VOL', 'MACD'])
 const isInWatchlist = ref(false)
 
-// 自动刷新控制 - 只在分时模式下启用
-const autoRefresh = ref(false)
-const refreshInterval = ref(10) // 分时数据刷新间隔（秒）
+// WebSocket 实时推送
+const wsConnected = ref(false)
 const lastRefreshTime = ref<Date | null>(null)
-let refreshTimer: ReturnType<typeof setInterval> | null = null
+let ws: WebSocket | null = null
+let reconnectTimer: ReturnType<typeof setTimeout> | null = null
 
 // 是否是分时模式
 const isMinuteMode = computed(() => period.value === 'minute')
@@ -106,50 +106,105 @@ const fetchData = async (showLoading = true) => {
   }
 }
 
-// 静默刷新（不显示loading）
-const silentRefresh = () => {
-  fetchData(false)
+// ==================== WebSocket 实时推送 ====================
+
+// 连接 WebSocket
+const connectWebSocket = () => {
+  if (!stockCode.value || ws?.readyState === WebSocket.OPEN) return
+
+  const wsUrl = `ws://${window.location.hostname}:8081/ws/stock`
+  ws = new WebSocket(wsUrl)
+
+  ws.onopen = () => {
+    console.log('个股 WebSocket 已连接')
+    wsConnected.value = true
+    // 订阅当前股票
+    ws?.send(JSON.stringify({
+      action: 'subscribe',
+      codes: [stockCode.value]
+    }))
+    if (reconnectTimer) {
+      clearTimeout(reconnectTimer)
+      reconnectTimer = null
+    }
+  }
+
+  ws.onmessage = (event) => {
+    try {
+      const msg = JSON.parse(event.data)
+      if (msg.type === 'stock_quote' && msg.data?.code === stockCode.value) {
+        // 更新最新价格数据
+        const quote = msg.data
+        lastRefreshTime.value = new Date()
+        // 更新 klineData 最后一条（如果是分时模式）
+        if (isMinuteMode.value && klineData.value.length > 0) {
+          const last = klineData.value[klineData.value.length - 1]
+          if (last.trade_date === quote.time) {
+            // 更新最后一条
+            last.close = quote.current
+            last.high = Math.max(last.high, quote.high)
+            last.low = Math.min(last.low, quote.low)
+            last.volume = quote.volume
+          } else {
+            // 添加新的一条
+            klineData.value.push({
+              trade_date: quote.time,
+              open: quote.open,
+              close: quote.current,
+              high: quote.high,
+              low: quote.low,
+              volume: quote.volume,
+              amount: quote.amount || 0,
+              change_pct: 0,
+            })
+          }
+        }
+      }
+    } catch (e) {
+      console.error('解析消息失败:', e)
+    }
+  }
+
+  ws.onclose = () => {
+    console.log('个股 WebSocket 断开')
+    wsConnected.value = false
+    // 分时模式下自动重连
+    if (isMinuteMode.value) {
+      reconnectTimer = setTimeout(connectWebSocket, 5000)
+    }
+  }
+
+  ws.onerror = (error) => {
+    console.error('WebSocket 错误:', error)
+  }
 }
 
-// 启动自动刷新（仅分时模式）
-const startAutoRefresh = () => {
-  stopAutoRefresh()
-  if (autoRefresh.value && isMinuteMode.value) {
-    refreshTimer = setInterval(silentRefresh, refreshInterval.value * 1000)
+// 断开 WebSocket
+const disconnectWebSocket = () => {
+  if (reconnectTimer) {
+    clearTimeout(reconnectTimer)
+    reconnectTimer = null
   }
-}
-
-// 停止自动刷新
-const stopAutoRefresh = () => {
-  if (refreshTimer) {
-    clearInterval(refreshTimer)
-    refreshTimer = null
+  if (ws) {
+    // 取消订阅
+    if (ws.readyState === WebSocket.OPEN && stockCode.value) {
+      ws.send(JSON.stringify({
+        action: 'unsubscribe',
+        codes: [stockCode.value]
+      }))
+    }
+    ws.close()
+    ws = null
   }
-}
-
-// 切换自动刷新（仅分时模式有效）
-const toggleAutoRefresh = () => {
-  if (!isMinuteMode.value) {
-    ElMessage.warning('自动刷新仅在分时模式下可用')
-    return
-  }
-  autoRefresh.value = !autoRefresh.value
-  if (autoRefresh.value) {
-    startAutoRefresh()
-    ElMessage.success('已开启自动刷新')
-  } else {
-    stopAutoRefresh()
-    ElMessage.info('已关闭自动刷新')
-  }
+  wsConnected.value = false
 }
 
 // 页面可见性控制
 const handleVisibilityChange = () => {
   if (document.hidden) {
-    stopAutoRefresh()
-  } else if (autoRefresh.value && isMinuteMode.value) {
-    silentRefresh() // 页面恢复时立即刷新一次
-    startAutoRefresh()
+    disconnectWebSocket()
+  } else if (isMinuteMode.value) {
+    connectWebSocket()
   }
 }
 
@@ -187,23 +242,17 @@ const onPeriodChange = async (newPeriod: string) => {
   const wasMinuteMode = isMinuteMode.value
   period.value = newPeriod
 
-  // 如果从分时切换到其他模式，停止自动刷新
+  // 如果从分时切换到其他模式，断开 WebSocket
   if (wasMinuteMode && !isMinuteMode.value) {
-    autoRefresh.value = false
-    stopAutoRefresh()
-  }
-
-  // 如果切换到分时模式，自动开启刷新
-  if (!wasMinuteMode && isMinuteMode.value) {
-    autoRefresh.value = true
+    disconnectWebSocket()
   }
 
   // 获取数据
   await fetchData()
 
-  // 分时模式启动自动刷新
-  if (isMinuteMode.value && autoRefresh.value) {
-    startAutoRefresh()
+  // 如果切换到分时模式，连接 WebSocket
+  if (!wasMinuteMode && isMinuteMode.value) {
+    connectWebSocket()
   }
 }
 
@@ -239,13 +288,28 @@ const priceChange = () => {
   }
 }
 
-watch(() => route.params.code, (newCode) => {
+watch(() => route.params.code, (newCode, oldCode) => {
   if (newCode) {
+    // 如果切换股票，先断开旧的 WebSocket 订阅
+    if (oldCode && ws?.readyState === WebSocket.OPEN) {
+      ws.send(JSON.stringify({
+        action: 'unsubscribe',
+        codes: [oldCode]
+      }))
+    }
+
     stockCode.value = newCode as string
-    // 初始加载时使用日K（非分时模式，不自动刷新）
+    // 初始加载时使用日K
     period.value = 'daily'
-    autoRefresh.value = false
     fetchData()
+
+    // 如果之前是分时模式，需要订阅新股票
+    if (isMinuteMode.value && ws?.readyState === WebSocket.OPEN) {
+      ws.send(JSON.stringify({
+        action: 'subscribe',
+        codes: [newCode]
+      }))
+    }
   }
 }, { immediate: true })
 
@@ -261,7 +325,7 @@ onMounted(() => {
 })
 
 onUnmounted(() => {
-  stopAutoRefresh()
+  disconnectWebSocket()
   document.removeEventListener('visibilitychange', handleVisibilityChange)
 })
 </script>
@@ -325,15 +389,11 @@ onUnmounted(() => {
             <el-button :icon="RefreshRight" size="small" @click="() => fetchData()">
               刷新
             </el-button>
-            <!-- 自动刷新按钮：仅分时模式显示 -->
-            <el-button
-              v-if="isMinuteMode"
-              size="small"
-              :type="autoRefresh ? 'success' : 'info'"
-              @click="toggleAutoRefresh"
-            >
-              {{ autoRefresh ? '自动刷新中' : '自动刷新' }}
-            </el-button>
+            <!-- WebSocket 状态：仅分时模式显示 -->
+            <span v-if="isMinuteMode" class="ws-status" :class="{ connected: wsConnected }">
+              <span class="status-dot"></span>
+              {{ wsConnected ? '实时' : '离线' }}
+            </span>
           </div>
         </div>
       </template>
@@ -413,6 +473,34 @@ onUnmounted(() => {
 .refresh-time {
   font-size: 12px;
   color: #909399;
+}
+
+.ws-status {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: #999;
+  padding: 4px 8px;
+  border-radius: 4px;
+  background: #f5f5f5;
+}
+
+.ws-status .status-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #ccc;
+}
+
+.ws-status.connected .status-dot {
+  background: #52c41a;
+  box-shadow: 0 0 6px rgba(82, 196, 26, 0.6);
+}
+
+.ws-status.connected {
+  color: #52c41a;
+  background: #f6ffed;
 }
 </style>
 

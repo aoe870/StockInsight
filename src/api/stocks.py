@@ -251,8 +251,12 @@ def _aggregate_kline(daily_data: List[KLineData], period: str) -> List[KLineData
         "amount": "sum",
     }).dropna()
 
-    # 计算涨跌幅
-    agg_df["change_pct"] = agg_df["close"].pct_change() * 100
+    # 计算涨跌幅（Decimal 类型需要先转换为 float）
+    close_float = agg_df["close"].astype(float)
+    change_pct = close_float.pct_change() * 100
+    # 处理无穷值和 NaN
+    change_pct = change_pct.replace([float('inf'), float('-inf')], 0).fillna(0)
+    agg_df["change_pct"] = change_pct
 
     # 转换回 KLineData
     result = []
@@ -265,7 +269,7 @@ def _aggregate_kline(daily_data: List[KLineData], period: str) -> List[KLineData
             close=row["close"],
             volume=int(row["volume"]),
             amount=row["amount"],
-            change_pct=row["change_pct"] if pd.notna(row["change_pct"]) else 0,
+            change_pct=row["change_pct"],
         ))
 
     return result

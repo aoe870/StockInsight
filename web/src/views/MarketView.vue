@@ -15,18 +15,34 @@ const pageSize = ref(20)
 // 大盘指数数据
 const indexQuotes = ref<IndexQuote[]>([])
 const indexLoading = ref(false)
+const lastUpdateTime = ref('')
 let refreshTimer: ReturnType<typeof setInterval> | null = null
 
-// 获取大盘指数
+// 获取指数行情（HTTP 轮询）
 const fetchIndexQuotes = async () => {
-  indexLoading.value = true
   try {
     const res = await indexApi.getRealtime()
     indexQuotes.value = res.items || []
+    lastUpdateTime.value = new Date().toLocaleTimeString()
   } catch (error) {
     console.error('获取指数行情失败:', error)
   } finally {
     indexLoading.value = false
+  }
+}
+
+// 启动自动刷新
+const startAutoRefresh = () => {
+  stopAutoRefresh()
+  // 每 10 秒刷新一次
+  refreshTimer = setInterval(fetchIndexQuotes, 10000)
+}
+
+// 停止自动刷新
+const stopAutoRefresh = () => {
+  if (refreshTimer) {
+    clearInterval(refreshTimer)
+    refreshTimer = null
   }
 }
 
@@ -61,38 +77,23 @@ const goToDetail = (code: string) => {
   router.push(`/stock/${code}`)
 }
 
-// 格式化数字
 const formatNumber = (num: number) => {
   if (num >= 100000000) return (num / 100000000).toFixed(2) + '亿'
   if (num >= 10000) return (num / 10000).toFixed(2) + '万'
   return num.toFixed(2)
 }
 
-// 启动自动刷新
-const startAutoRefresh = () => {
-  stopAutoRefresh()
-  refreshTimer = setInterval(fetchIndexQuotes, 30000)
-}
-
-// 停止自动刷新
-const stopAutoRefresh = () => {
-  if (refreshTimer) {
-    clearInterval(refreshTimer)
-    refreshTimer = null
-  }
-}
-
-// 页面可见性控制
 const handleVisibilityChange = () => {
   if (document.hidden) {
     stopAutoRefresh()
   } else {
-    fetchIndexQuotes() // 页面恢复时立即刷新
+    fetchIndexQuotes()
     startAutoRefresh()
   }
 }
 
 onMounted(async () => {
+  indexLoading.value = true
   await fetchIndexQuotes()
   await fetchStocks()
   startAutoRefresh()
@@ -108,6 +109,10 @@ onUnmounted(() => {
 <template>
   <div class="market-view">
     <!-- 大盘指数 -->
+    <div class="index-header">
+      <span class="index-title">大盘指数</span>
+      <span v-if="lastUpdateTime" class="update-time">更新: {{ lastUpdateTime }}</span>
+    </div>
     <div class="index-bar" v-loading="indexLoading">
       <template v-if="indexQuotes.length > 0">
         <div
@@ -199,6 +204,25 @@ onUnmounted(() => {
   display: flex;
   flex-direction: column;
   gap: 16px;
+}
+
+/* 大盘指数头部 */
+.index-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: -8px;
+}
+
+.index-title {
+  font-size: 16px;
+  font-weight: 600;
+  color: #333;
+}
+
+.update-time {
+  font-size: 12px;
+  color: #999;
 }
 
 /* 大盘指数栏 */

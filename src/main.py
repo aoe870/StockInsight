@@ -14,10 +14,13 @@ from src import __version__
 from src.config import settings
 from src.core.database import DatabaseManager
 from src.api.router import api_router
+from src.api.websocket import router as ws_router, ws_manager
 from src.utils.logger import logger
 from src.schemas.common import HealthResponse, ErrorResponse
 from src.services.auto_sync import auto_sync_service
 from src.services.scheduler import scheduler_service
+from src.core.redis import redis_manager
+from src.services.quote_push import quote_push_service
 
 
 @asynccontextmanager
@@ -31,6 +34,23 @@ async def lifespan(app: FastAPI):
     DatabaseManager.get_engine()
     logger.info("数据库连接池已初始化")
 
+    # 初始化 Redis 连接
+    try:
+        await redis_manager.connect()
+        logger.info("Redis 连接已建立")
+
+        # 注意：行情推送服务暂时禁用
+        # AKShare 的 py_mini_racer (V8 引擎) 在多线程环境下会崩溃
+        # 等待对接更稳定的 Level2 数据源后再启用
+        # await quote_push_service.start()
+        # logger.info("行情推送服务已启动")
+
+        # 启动 WebSocket 管理器
+        await ws_manager.start()
+        logger.info("WebSocket 管理器已启动")
+    except Exception as e:
+        logger.warning(f"Redis 连接失败，实时行情功能不可用: {e}")
+
     # 启动自动数据同步（后台任务，不阻塞启动）
     asyncio.create_task(auto_sync_service.check_and_sync_on_startup())
 
@@ -43,6 +63,15 @@ async def lifespan(app: FastAPI):
     # 关闭时
     logger.info("SAPAS 正在关闭...")
     scheduler_service.shutdown()
+
+    # 关闭行情推送和 Redis
+    try:
+        await ws_manager.stop()
+        await quote_push_service.stop()
+        await redis_manager.disconnect()
+    except Exception:
+        pass
+
     await DatabaseManager.close()
     logger.info("SAPAS 已关闭")
 
@@ -121,6 +150,9 @@ async def root():
 
 # 注册 API 路由
 app.include_router(api_router)
+
+# 注册 WebSocket 路由
+app.include_router(ws_router, tags=["WebSocket"])
 
 
 # 开发环境启动入口
