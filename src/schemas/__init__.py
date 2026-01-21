@@ -46,4 +46,11 @@ from src.schemas.subscription import (
     SubscriptionListResponse,
     NOTIFICATION_CHANNELS,
 )
+from src.schemas.backtest import (
+    BacktestConfigRequest,
+    BacktestResultResponse,
+    StrategyInfo,
+    TradeRecord,
+    PerformanceMetrics,
+)
 

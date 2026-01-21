@@ -21,6 +21,10 @@ numpy>=1.26.0
 # 技术指标
 pandas-ta>=0.3.14b
 
+# 回测框架
+backtrader>=1.9.78
+matplotlib>=3.8.0
+
 # 可视化
 plotly>=5.18.0
 kaleido>=0.2.1

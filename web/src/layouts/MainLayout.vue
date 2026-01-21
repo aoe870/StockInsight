@@ -12,6 +12,7 @@ import {
   Filter,
   User,
   SwitchButton,
+  Document,
 } from '@element-plus/icons-vue'
 import { currentUser, isAdmin } from '@/stores/auth'
 import { authApi } from '@/api'
@@ -24,6 +25,7 @@ const menuItems = [
   { path: '/market', title: '行情中心', icon: TrendCharts },
   { path: '/screener', title: '指标选股', icon: Filter },
   { path: '/watchlist', title: '自选股', icon: Star },
+  { path: '/backtest', title: '策略回测', icon: Document },
   { path: '/alerts', title: '预警中心', icon: Bell },
 ]
 

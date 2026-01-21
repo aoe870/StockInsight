@@ -37,6 +37,12 @@ const routes: RouteRecordRaw[] = [
     meta: { title: '预警中心' },
   },
   {
+    path: '/backtest',
+    name: 'Backtest',
+    component: () => import('@/views/BacktestView.vue'),
+    meta: { title: '策略回测' },
+  },
+  {
     path: '/stock/:code',
     name: 'StockDetail',
     component: () => import('@/views/StockDetailView.vue'),

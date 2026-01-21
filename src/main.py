@@ -9,6 +9,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+import time
 
 from src import __version__
 from src.config import settings
@@ -108,6 +109,61 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+@app.middleware("http")
+async def request_logging_middleware(request: Request, call_next):
+    """请求日志中间件"""
+    start_time = time.time()
+
+    # 记录请求信息
+    client_ip = request.client.host if request.client else "unknown"
+    method = request.method
+    path = request.url.path
+    query = str(request.url.query) if request.url.query else ""
+
+    # 跳过健康检查和文档路径的日志
+    skip_paths = ["/health", "/", "/docs", "/redoc", "/openapi.json"]
+    if path not in skip_paths:
+        # 控制台输出（始终显示）
+        full_path = f"{path}?{query}" if query else path
+        print(f"[REQUEST] {method} {full_path} from {client_ip}", flush=True)
+
+        # 文件日志
+        logger.info(f"[REQUEST] {method} {path} from {client_ip}")
+
+    try:
+        response = await call_next(request)
+        process_time = (time.time() - start_time) * 1000
+
+        # 记录响应信息
+        if path not in skip_paths:
+            # 控制台输出
+            print(f"[RESPONSE] {method} {path} - status: {response.status_code}, time: {process_time:.2f}ms", flush=True)
+
+            # 文件日志
+            logger.info(
+                f"[RESPONSE] {method} {path} - "
+                f"status: {response.status_code}, "
+                f"time: {process_time:.2f}ms"
+            )
+
+        # 添加处理时间到响应头
+        response.headers["X-Process-Time"] = f"{process_time:.2f}"
+        return response
+
+    except Exception as e:
+        process_time = (time.time() - start_time) * 1000
+        # 控制台错误输出
+        print(f"[ERROR] {method} {path} - exception: {str(e)}, time: {process_time:.2f}ms", flush=True)
+
+        # 文件错误日志
+        logger.error(
+            f"[ERROR] {method} {path} - "
+            f"exception: {str(e)}, "
+            f"time: {process_time:.2f}ms"
+        )
+        raise
 
 
 # 全局异常处理
