@@ -1,0 +1,16 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(curl:*)",
+      "Bash(timeout:*)",
+      "Bash(python:*)",
+      "Bash(cd:*)",
+      "Bash(chcp:*)",
+      "Bash(netstat:*)",
+      "Bash(taskkill:*)",
+      "Bash(cmd //c \"taskkill //F //PID 35948 2>&1 && taskkill //F //PID 48060 2>&1\")",
+      "Bash(powershell:*)",
+      "Bash(tasklist:*)"
+    ]
+  }
+}

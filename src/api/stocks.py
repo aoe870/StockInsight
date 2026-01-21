@@ -555,6 +555,100 @@ def _aggregate_ohlcv(df: pd.DataFrame, period: str) -> pd.DataFrame:
     return agg_df
 
 
+@router.get("/{code}/fundflow")
+async def get_fund_flow(
+    code: str,
+    start_date: Optional[date] = Query(None, description="开始日期 (YYYY-MM-DD)"),
+    end_date: Optional[date] = Query(None, description="结束日期 (YYYY-MM-DD)"),
+    days: int = Query(30, ge=1, le=365, description="查询天数（当未指定日期范围时使用）"),
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    获取个股资金流向数据
+
+    返回不同订单类型的资金流入流出情况：
+    - 主力净流入: 超大单 + 大单
+    - 超大单净流入: 特大单 (50万股或100万元以上)
+    - 大单净流入: 大单 (10-50万股或20-100万元)
+    - 中单净流入: 中单 (2-10万股或4-20万元)
+    - 小单净流入: 小单 (2万股或4万元以下)
+
+    支持按日期范围查询或按天数查询
+    """
+    # 获取股票信息
+    stock_result = await db.execute(
+        select(StockBasics).where(StockBasics.code == code)
+    )
+    stock = stock_result.scalar_one_or_none()
+    if not stock:
+        raise HTTPException(status_code=404, detail=f"股票 {code} 不存在")
+
+    # 确定市场参数
+    market = "sh" if stock.market == "SH" else "sz"
+
+    try:
+        def fetch_fund_flow():
+            import akshare as ak
+            from datetime import datetime
+            df = ak.stock_individual_fund_flow(stock=code, market=market)
+            if df.empty:
+                return []
+
+            # 过滤日期范围
+            if start_date or end_date:
+                # 确保日期列是字符串格式，便于比较
+                df['日期'] = df['日期'].astype(str)
+                # 将 date 对象转换为 ISO 格式字符串
+                start_str = start_date.isoformat() if start_date else None
+                end_str = end_date.isoformat() if end_date else None
+                if start_str:
+                    df = df[df['日期'] >= start_str]
+                if end_str:
+                    df = df[df['日期'] <= end_str]
+            else:
+                # 取最近 days 天数据
+                df = df.head(days)
+
+            result = []
+            for _, row in df.iterrows():
+                result.append({
+                    "date": str(row.get("日期", "")),
+                    "close": float(row.get("收盘价", 0)),
+                    "change_pct": float(row.get("涨跌幅", 0)),
+                    "main_net_amount": float(row.get("主力净流入-净额", 0)),
+                    "main_net_pct": float(row.get("主力净流入-净占比", 0)),
+                    "super_large_net_amount": float(row.get("超大单净流入-净额", 0)),
+                    "super_large_net_pct": float(row.get("超大单净流入-净占比", 0)),
+                    "large_net_amount": float(row.get("大单净流入-净额", 0)),
+                    "large_net_pct": float(row.get("大单净流入-净占比", 0)),
+                    "medium_net_amount": float(row.get("中单净流入-净额", 0)),
+                    "medium_net_pct": float(row.get("中单净流入-净占比", 0)),
+                    "small_net_amount": float(row.get("小单净流入-净额", 0)),
+                    "small_net_pct": float(row.get("小单净流入-净占比", 0)),
+                })
+            return result
+
+        import asyncio
+        loop = asyncio.get_event_loop()
+        data = await asyncio.wait_for(
+            loop.run_in_executor(None, fetch_fund_flow),
+            timeout=30.0
+        )
+
+        return {
+            "code": code,
+            "name": stock.name,
+            "market": stock.market,
+            "data": data
+        }
+    except asyncio.TimeoutError:
+        logger.error(f"获取资金流向数据超时: {code}")
+        raise HTTPException(status_code=504, detail="获取数据超时")
+    except Exception as e:
+        logger.error(f"获取资金流向数据失败: {code}, 错误: {e}")
+        raise HTTPException(status_code=500, detail=f"获取数据失败: {str(e)}")
+
+
 @router.get("/{code}/signals", response_model=SignalResponse)
 async def get_signals(
     code: str,

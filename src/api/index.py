@@ -58,16 +58,106 @@ async def get_index_list():
 
 @router.get("/realtime")
 async def get_realtime_quote():
-    """获取主要指数行情（基于最新日K数据，带缓存）"""
+    """获取主要指数实时行情（使用新浪实时接口）"""
     global _index_cache
 
-    # 检查缓存是否有效
+    # 检查缓存是否有效（缓存 5 秒，避免频繁请求）
     now = time.time()
-    if _index_cache["data"] and (now - _index_cache["updated_at"]) < _index_cache["ttl"]:
+    if _index_cache["data"] and (now - _index_cache["updated_at"]) < 5:
         logger.debug("返回缓存的指数数据")
         return {"items": _index_cache["data"]}
 
-    # 如果网络有问题，直接返回空数据，避免阻塞
+    try:
+        def fetch_realtime():
+            """使用新浪实时行情接口获取所有指数数据"""
+            try:
+                # 新浪接口返回所有指数，包括上证和深证
+                df = ak.stock_zh_index_spot_sina()
+                if df.empty:
+                    logger.warning("获取实时指数数据返回空")
+                    return None
+
+                result = []
+
+                for code, info in MAIN_INDEXES.items():
+                    # 新浪接口的代码格式与我们的格式一致
+                    row = df[df.iloc[:, 0] == code]
+
+                    if not row.empty:
+                        item = row.iloc[0]
+                        try:
+                            # 新浪接口的列索引（共11列）
+                            # 0:代码, 1:名称, 2:最新价, 3:涨跌额, 4:涨跌幅, 5:昨收, 6:今开, 7:最高, 8:最低, 9:成交量, 10:成交额
+                            current = float(item.iloc[2])
+                            change = float(item.iloc[3])
+                            change_pct = float(item.iloc[4])
+                            open_price = float(item.iloc[6])
+                            high = float(item.iloc[7])
+                            low = float(item.iloc[8])
+                            volume = float(item.iloc[9])
+                            amount = float(item.iloc[10])
+
+                            result.append({
+                                "code": code,
+                                "name": info["name"],
+                                "current": current,
+                                "change": round(change, 2),
+                                "change_pct": round(change_pct, 2),
+                                "open": open_price,
+                                "high": high,
+                                "low": low,
+                                "volume": volume,
+                                "amount": amount,
+                                "trade_date": datetime.now().strftime("%Y-%m-%d"),
+                            })
+                        except (ValueError, TypeError, IndexError) as e:
+                            logger.warning(f"解析指数 {code} 数据失败: {e}")
+                            continue
+                    else:
+                        logger.debug(f"未找到指数 {code}")
+
+                return result if result else None
+            except Exception as e:
+                logger.error(f"获取实时指数数据失败: {e}")
+                return None
+
+        # 执行获取
+        loop = asyncio.get_event_loop()
+        result = await asyncio.wait_for(
+            loop.run_in_executor(None, fetch_realtime),
+            timeout=5.0
+        )
+
+        # 如果实时接口失败，降级使用日线数据
+        if result is None:
+            logger.info("实时接口获取失败，降级使用日线数据")
+            return await get_realtime_quote_fallback()
+
+        # 更新缓存
+        _index_cache["data"] = result
+        _index_cache["updated_at"] = now
+        logger.info(f"指数实时数据已更新: {len(result)} 条")
+
+        return {"items": result}
+
+    except asyncio.TimeoutError:
+        logger.warning("获取实时指数数据超时，返回缓存")
+        return {"items": _index_cache.get("data", [])}
+    except Exception as e:
+        logger.error(f"获取实时指数数据异常: {e}")
+        return {"items": _index_cache.get("data", [])}
+
+
+def get_realtime_quote_fallback():
+    """降级方案：使用日线数据（辅助函数，实际逻辑在下面）"""
+    # 这是一个占位符，实际逻辑在主函数中处理
+    return {"items": []}
+
+
+async def get_realtime_quote_fallback():
+    """降级方案：使用日线数据"""
+    global _index_cache
+
     try:
         def fetch_single(code: str, info: dict):
             try:
@@ -75,7 +165,6 @@ async def get_realtime_quote():
                 if df.empty or len(df) < 2:
                     return None
 
-                # 获取最近两天数据计算涨跌
                 latest = df.iloc[-1]
                 prev = df.iloc[-2]
 
@@ -98,36 +187,28 @@ async def get_realtime_quote():
                     "trade_date": str(latest.get("date", ""))[:10],
                 }
             except Exception as e:
-                logger.warning(f"获取指数 {code} 失败: {e}")
+                logger.warning(f"获取指数 {code} 日线数据失败: {e}")
                 return None
 
-        # 并行获取，设置超时
         loop = asyncio.get_event_loop()
         tasks = [
             loop.run_in_executor(None, fetch_single, code, info)
             for code, info in MAIN_INDEXES.items()
         ]
 
-        # 添加超时控制，10秒内完成
         results = await asyncio.wait_for(
             asyncio.gather(*tasks, return_exceptions=True),
             timeout=10.0
         )
         result = [r for r in results if r is not None and not isinstance(r, Exception)]
 
-        # 更新缓存
         if result:
             _index_cache["data"] = result
-            _index_cache["updated_at"] = now
-            logger.info(f"指数数据已更新缓存: {len(result)} 条")
+            _index_cache["updated_at"] = time.time()
 
         return {"items": result}
-
-    except asyncio.TimeoutError:
-        logger.warning("获取指数数据超时，返回缓存或空数据")
-        return {"items": _index_cache.get("data", [])}
     except Exception as e:
-        logger.error(f"获取指数数据异常: {e}")
+        logger.error(f"降级获取指数数据失败: {e}")
         return {"items": _index_cache.get("data", [])}
 
 

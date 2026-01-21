@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, onMounted, onUnmounted } from 'vue'
+import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { stockApi, indexApi, type Stock, type IndexQuote } from '@/api'
 import { Search, Star, CaretTop, CaretBottom } from '@element-plus/icons-vue'
@@ -17,6 +17,13 @@ const indexQuotes = ref<IndexQuote[]>([])
 const indexLoading = ref(false)
 const lastUpdateTime = ref('')
 let refreshTimer: ReturnType<typeof setInterval> | null = null
+
+// 计算市场总成交额（只统计上证指数和深证成指）
+const totalMarketAmount = computed(() => {
+  return indexQuotes.value
+    .filter(item => item.code === 'sh000001' || item.code === 'sz399001')
+    .reduce((sum, item) => sum + (item.amount || 0), 0)
+})
 
 // 获取指数行情（HTTP 轮询）
 const fetchIndexQuotes = async () => {
@@ -111,6 +118,9 @@ onUnmounted(() => {
     <!-- 大盘指数 -->
     <div class="index-header">
       <span class="index-title">大盘指数</span>
+      <span v-if="totalMarketAmount > 0" class="total-amount">
+        市场总成交: <strong>{{ formatNumber(totalMarketAmount) }}</strong>
+      </span>
       <span v-if="lastUpdateTime" class="update-time">更新: {{ lastUpdateTime }}</span>
     </div>
     <div class="index-bar" v-loading="indexLoading">
@@ -223,6 +233,18 @@ onUnmounted(() => {
 .update-time {
   font-size: 12px;
   color: #999;
+}
+
+.total-amount {
+  font-size: 14px;
+  color: #666;
+  margin-right: auto;
+  padding-left: 20px;
+}
+
+.total-amount strong {
+  color: #409eff;
+  font-size: 15px;
 }
 
 /* 大盘指数栏 */

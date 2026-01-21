@@ -75,6 +75,30 @@ export interface StockQuote {
   trade_date: string
 }
 
+// 资金流向数据类型
+export interface FundFlowData {
+  date: string
+  close: number
+  change_pct: number
+  main_net_amount: number
+  main_net_pct: number
+  super_large_net_amount: number
+  super_large_net_pct: number
+  large_net_amount: number
+  large_net_pct: number
+  medium_net_amount: number
+  medium_net_pct: number
+  small_net_amount: number
+  small_net_pct: number
+}
+
+export interface FundFlowResponse {
+  code: string
+  name: string
+  market: string
+  data: FundFlowData[]
+}
+
 // 分时数据类型
 export interface MinuteData {
   time: string
@@ -115,6 +139,10 @@ export const stockApi = {
   // 批量获取实时行情
   getBatchQuote: (codes: string[]) =>
     api.post<any, { items: StockQuote[] }>('/stocks/quote/batch', codes),
+
+  // 获取资金流向数据
+  getFundFlow: (code: string, params?: { start_date?: string; end_date?: string; days?: number }) =>
+    api.get<any, FundFlowResponse>(`/stocks/${code}/fundflow`, { params }),
 }
 
 // ==================== 自选股 API ====================
