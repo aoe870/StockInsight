@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, onMounted, onUnmounted, watch, computed } from 'vue'
+import { ref, onMounted, onUnmounted, watch, computed, nextTick } from 'vue'
 import * as echarts from 'echarts'
 import type { KLineData } from '@/api'
 
@@ -15,8 +15,20 @@ const emit = defineEmits<{
   (e: 'indicatorChange', indicators: string[]): void
 }>()
 
+// Main chart ref (K-line + Volume)
 const chartRef = ref<HTMLDivElement>()
-let chart: echarts.ECharts | null = null
+let mainChart: echarts.ECharts | null = null
+
+// Sub-indicator chart refs and instances
+const subChartRefs = ref<Record<string, HTMLDivElement>>({})
+const subCharts = ref<Record<string, echarts.ECharts>>({})
+
+// Helper to set sub-chart refs
+const setSubChartRef = (el: any, indicator: string) => {
+  if (el) {
+    subChartRefs.value[indicator] = el
+  }
+}
 
 // 周期选项
 const periods = [
@@ -80,7 +92,18 @@ const getIndicatorSeries = (indicatorData: Record<string, any>[] | undefined, ke
   return indicatorData.map(d => d[key] ?? null)
 }
 
-const chartOption = computed(() => {
+// Main chart indicators (MA, BOLL, VOL)
+const mainChartIndicators = computed(() => {
+  return selectedIndicators.value.filter(i => ['MA', 'BOLL', 'VOL'].includes(i))
+})
+
+// Sub indicators (MACD, KDJ, RSI, CCI, WR, DMI)
+const subIndicators = computed(() => {
+  return selectedIndicators.value.filter(i => ['MACD', 'KDJ', 'RSI', 'CCI', 'WR', 'DMI'].includes(i))
+})
+
+// Main chart option (K-line + Volume + MA + BOLL)
+const mainChartOption = computed(() => {
   const dates = props.data.map(d => d.trade_date)
   const ohlc = props.data.map(d => [d.open, d.close, d.low, d.high])
   const volumes = props.data.map(d => d.volume)
@@ -91,10 +114,8 @@ const chartOption = computed(() => {
   const ma20 = calculateMA(closes, 20)
   const ma60 = calculateMA(closes, 60)
 
-  // 从后端指标数据提取
   const ind = props.indicatorData || []
 
-  // 基础系列
   const series: any[] = [
     {
       name: 'K线',
@@ -111,12 +132,10 @@ const chartOption = computed(() => {
     },
   ]
 
-  const legendData = ['K线', '成交量']
-
-  // 主图指标说明文字（在标题中显示，不放入图例）
+  const legendData = ['K线']
   const mainIndicatorLabels: string[] = []
 
-  // MA 均线 - 不加入图例
+  // MA 均线
   if (selectedIndicators.value.includes('MA')) {
     const ma5Val = ma5[ma5.length - 1]?.toFixed(2) || '--'
     const ma10Val = ma10[ma10.length - 1]?.toFixed(2) || '--'
@@ -132,7 +151,7 @@ const chartOption = computed(() => {
     )
   }
 
-  // BOLL 布林带 - 不加入图例
+  // BOLL 布林带
   if (selectedIndicators.value.includes('BOLL') && ind.length) {
     const bollUpper = ind[ind.length - 1]?.boll_upper?.toFixed(2) || '--'
     const bollMid = ind[ind.length - 1]?.boll_mid?.toFixed(2) || '--'
@@ -146,236 +165,76 @@ const chartOption = computed(() => {
     )
   }
 
-  // 主图标题显示指标值
   const mainTitle = mainIndicatorLabels.length > 0 ? mainIndicatorLabels.join('  ') : ''
 
   // 成交量
-  series.push({
-    name: '成交量',
-    type: 'bar',
-    data: volumes.map((v, i) => ({
-      value: v,
-      itemStyle: { color: ohlc[i][1] >= ohlc[i][0] ? '#ec0000' : '#00da3c' },
-    })),
-    xAxisIndex: 1,
-    yAxisIndex: 1,
-  })
+  if (selectedIndicators.value.includes('VOL')) {
+    legendData.push('成交量')
+    series.push({
+      name: '成交量',
+      type: 'bar',
+      data: volumes.map((v, i) => ({
+        value: v,
+        itemStyle: { color: ohlc[i][1] >= ohlc[i][0] ? '#ec0000' : '#00da3c' },
+      })),
+      xAxisIndex: 1,
+      yAxisIndex: 1,
+    })
+  }
 
-  // 计算需要多少个指标子图
-  const subIndicators: string[] = []
-  if (selectedIndicators.value.includes('MACD')) subIndicators.push('MACD')
-  if (selectedIndicators.value.includes('KDJ')) subIndicators.push('KDJ')
-  if (selectedIndicators.value.includes('RSI')) subIndicators.push('RSI')
-  if (selectedIndicators.value.includes('CCI')) subIndicators.push('CCI')
-  if (selectedIndicators.value.includes('WR')) subIndicators.push('WR')
-  if (selectedIndicators.value.includes('DMI')) subIndicators.push('DMI')
-
-  // 预估图例数据项数量（用于提前计算legendHeight）
-  let estimatedLegendItems = 1 // K线
-  if (selectedIndicators.value.includes('MA')) estimatedLegendItems += 4
-  if (selectedIndicators.value.includes('BOLL')) estimatedLegendItems += 3
-  if (selectedIndicators.value.includes('MACD')) estimatedLegendItems += 3
-  if (selectedIndicators.value.includes('KDJ')) estimatedLegendItems += 3
-  if (selectedIndicators.value.includes('RSI')) estimatedLegendItems += 3
-  if (selectedIndicators.value.includes('CCI')) estimatedLegendItems += 1
-  if (selectedIndicators.value.includes('WR')) estimatedLegendItems += 2
-  if (selectedIndicators.value.includes('DMI')) estimatedLegendItems += 3
-  // 减少图例占用的空间
-  const legendHeight = estimatedLegendItems > 8 ? 25 : estimatedLegendItems > 4 ? 20 : 18
-
-  // 动态计算 grid 布局 - 根据指标数量调整
-  const subCount = subIndicators.length
-  // 主图高度随指标数量减少
-  const mainHeight = subCount === 0 ? 58 : subCount === 1 ? 48 : subCount === 2 ? 40 : subCount === 3 ? 34 : 28
-  const volHeight = 10
-  // 副图指标高度：确保每个至少有足够空间
-  const availableHeight = 88 - mainHeight - volHeight - 4 // 留出底部滑块空间
-  const subHeight = subCount > 0 ? Math.max(12, Math.floor(availableHeight / subCount)) : 0
+  const showVolume = selectedIndicators.value.includes('VOL')
+  const mainHeight = showVolume ? 60 : 75
+  const volHeight = showVolume ? 18 : 0
 
   const grids: any[] = [
     {
       left: '10%',
       right: '3%',
-      top: `${legendHeight + 6}%`,
+      top: '8%',
       height: `${mainHeight}%`,
       backgroundColor: 'rgba(255, 255, 255, 0)',
-      borderWidth: 0,
-      show: true
-    },
-    {
-      left: '10%',
-      right: '3%',
-      top: `${legendHeight + mainHeight + 8}%`,
-      height: `${volHeight}%`,
-      backgroundColor: 'rgba(0, 0, 0, 0.01)',
       borderWidth: 0,
       show: true
     },
   ]
 
   const xAxes: any[] = [
-    { type: 'category', data: dates, gridIndex: 0, axisLine: { lineStyle: { color: '#8392A5' } }, splitLine: { show: false }, axisLabel: { show: false } },
-    { type: 'category', data: dates, gridIndex: 1, axisLine: { lineStyle: { color: '#8392A5' } }, splitLine: { show: false }, axisLabel: { show: false } },
+    { type: 'category', data: dates, gridIndex: 0, axisLine: { lineStyle: { color: '#8392A5' } }, splitLine: { show: false }, axisLabel: { show: !showVolume } },
   ]
 
   const yAxes: any[] = [
     { type: 'value', gridIndex: 0, scale: true, splitArea: { show: true }, axisLine: { lineStyle: { color: '#8392A5' } }, splitLine: { lineStyle: { color: '#eee' } }, position: 'right' },
-    { type: 'value', gridIndex: 1, scale: true, splitNumber: 2, axisLabel: { show: false }, axisLine: { show: false }, splitLine: { show: false } },
   ]
 
-  // 添加指标子图
-  let currentTop = legendHeight + mainHeight + volHeight + 10
-  // 为不同指标定义不同的背景色和标题颜色（更明显）
-  const indicatorStyles: Record<string, string> = {
-    'MACD': '#1890ff',
-    'KDJ': '#faad14',
-    'RSI': '#eb2f96',
-    'CCI': '#722ed1',
-    'WR': '#52c41a',
-    'DMI': '#13c2c2',
-  }
-
-  // 生成左侧指标标签和副图标题栏（提前初始化数组）
-  const graphicLabels: any[] = [
-    { type: 'text', left: 5, top: `${legendHeight + 6}%`, style: { text: 'K线', fill: '#666', fontSize: 10 } },
-    { type: 'text', left: 5, top: `${legendHeight + mainHeight + 8}%`, style: { text: 'VOL', fill: '#666', fontSize: 10 } },
-  ]
-
-  subIndicators.forEach((indicator, idx) => {
-    const gridIdx = grids.length
-    const isLast = idx === subIndicators.length - 1
-    const indicatorColor = indicatorStyles[indicator] || '#666'
-
-    // 在循环中保存当前指标的top位置，用于后面添加graphic
-    const indicatorTop = currentTop
-
+  if (showVolume) {
     grids.push({
       left: '10%',
       right: '3%',
-      top: `${currentTop}%`,
-      height: `${subHeight}%`,
-      backgroundColor: 'rgba(0, 0, 0, 0.02)',
+      top: `${mainHeight + 10}%`,
+      height: `${volHeight}%`,
+      backgroundColor: 'rgba(0, 0, 0, 0.01)',
       borderWidth: 0,
-      borderColor: 'transparent',
       show: true
     })
-    xAxes.push({ type: 'category', data: dates, gridIndex: gridIdx, axisLine: { lineStyle: { color: '#8392A5' } }, splitLine: { show: false }, axisLabel: { show: isLast, fontSize: 10 } })
+    xAxes.push({ type: 'category', data: dates, gridIndex: 1, axisLine: { lineStyle: { color: '#8392A5' } }, splitLine: { show: false }, axisLabel: { show: true, fontSize: 10 } })
+    yAxes.push({ type: 'value', gridIndex: 1, scale: true, splitNumber: 2, axisLabel: { show: false }, axisLine: { show: false }, splitLine: { show: false } })
+  }
 
-    // 获取指标当前值用于显示
-    const getLastValue = (key: string) => {
-      if (!ind.length) return '--'
-      const val = ind[ind.length - 1]?.[key]
-      return val !== null && val !== undefined ? val.toFixed(2) : '--'
-    }
+  const graphicLabels: any[] = [
+    { type: 'text', left: 5, top: '9%', style: { text: 'K线', fill: '#666', fontSize: 10 } },
+  ]
+  if (showVolume) {
+    graphicLabels.push({ type: 'text', left: 5, top: `${mainHeight + 11}%`, style: { text: 'VOL', fill: '#666', fontSize: 10 } })
+  }
 
-    if (indicator === 'MACD') {
-      yAxes.push({ type: 'value', gridIndex: gridIdx, scale: true, splitNumber: 2, axisLabel: { fontSize: 9, show: false }, axisLine: { show: false }, splitLine: { lineStyle: { color: '#f0f0f0' } }, position: 'right' })
-
-      if (ind.length) {
-        series.push(
-          { name: 'DIF', type: 'line', data: getIndicatorSeries(ind, 'macd'), xAxisIndex: gridIdx, yAxisIndex: gridIdx, lineStyle: { width: 1, color: '#1890ff' }, symbol: 'none' },
-          { name: 'DEA', type: 'line', data: getIndicatorSeries(ind, 'macd_signal'), xAxisIndex: gridIdx, yAxisIndex: gridIdx, lineStyle: { width: 1, color: '#faad14' }, symbol: 'none' },
-          { name: 'MACD柱', type: 'bar', data: getIndicatorSeries(ind, 'macd_hist').map(v => ({ value: v, itemStyle: { color: v !== null && v >= 0 ? '#ec0000' : '#00da3c' } })), xAxisIndex: gridIdx, yAxisIndex: gridIdx },
-        )
-      }
-    }
-
-    if (indicator === 'KDJ') {
-      yAxes.push({ type: 'value', gridIndex: gridIdx, scale: true, splitNumber: 2, axisLabel: { fontSize: 9, show: false }, axisLine: { show: false }, splitLine: { lineStyle: { color: '#f0f0f0' } }, position: 'right' })
-
-      if (ind.length) {
-        series.push(
-          { name: 'K', type: 'line', data: getIndicatorSeries(ind, 'k'), xAxisIndex: gridIdx, yAxisIndex: gridIdx, lineStyle: { width: 1, color: '#1890ff' }, symbol: 'none' },
-          { name: 'D', type: 'line', data: getIndicatorSeries(ind, 'd'), xAxisIndex: gridIdx, yAxisIndex: gridIdx, lineStyle: { width: 1, color: '#faad14' }, symbol: 'none' },
-          { name: 'J', type: 'line', data: getIndicatorSeries(ind, 'j'), xAxisIndex: gridIdx, yAxisIndex: gridIdx, lineStyle: { width: 1, color: '#eb2f96' }, symbol: 'none' },
-        )
-      }
-    }
-
-    if (indicator === 'RSI') {
-      yAxes.push({ type: 'value', gridIndex: gridIdx, scale: true, splitNumber: 2, axisLabel: { fontSize: 9, show: false }, axisLine: { show: false }, splitLine: { lineStyle: { color: '#f0f0f0' } }, position: 'right' })
-
-      if (ind.length) {
-        series.push(
-          { name: 'RSI6', type: 'line', data: getIndicatorSeries(ind, 'rsi6'), xAxisIndex: gridIdx, yAxisIndex: gridIdx, lineStyle: { width: 1, color: '#1890ff' }, symbol: 'none' },
-          { name: 'RSI12', type: 'line', data: getIndicatorSeries(ind, 'rsi12'), xAxisIndex: gridIdx, yAxisIndex: gridIdx, lineStyle: { width: 1, color: '#faad14' }, symbol: 'none' },
-          { name: 'RSI24', type: 'line', data: getIndicatorSeries(ind, 'rsi24'), xAxisIndex: gridIdx, yAxisIndex: gridIdx, lineStyle: { width: 1, color: '#eb2f96' }, symbol: 'none' },
-        )
-      }
-    }
-
-    if (indicator === 'CCI') {
-      yAxes.push({ type: 'value', gridIndex: gridIdx, scale: true, splitNumber: 2, axisLabel: { fontSize: 9, show: false }, axisLine: { show: false }, splitLine: { lineStyle: { color: '#f0f0f0' } }, position: 'right' })
-
-      if (ind.length) {
-        series.push(
-          { name: 'CCI', type: 'line', data: getIndicatorSeries(ind, 'cci'), xAxisIndex: gridIdx, yAxisIndex: gridIdx, lineStyle: { width: 1, color: '#722ed1' }, symbol: 'none' },
-        )
-      }
-    }
-
-    if (indicator === 'WR') {
-      yAxes.push({ type: 'value', gridIndex: gridIdx, scale: true, splitNumber: 2, axisLabel: { fontSize: 9, show: false }, axisLine: { show: false }, splitLine: { lineStyle: { color: '#f0f0f0' } }, position: 'right' })
-
-      if (ind.length) {
-        series.push(
-          { name: 'WR14', type: 'line', data: getIndicatorSeries(ind, 'wr'), xAxisIndex: gridIdx, yAxisIndex: gridIdx, lineStyle: { width: 1, color: '#1890ff' }, symbol: 'none' },
-          { name: 'WR6', type: 'line', data: getIndicatorSeries(ind, 'wr6'), xAxisIndex: gridIdx, yAxisIndex: gridIdx, lineStyle: { width: 1, color: '#faad14' }, symbol: 'none' },
-        )
-      }
-    }
-
-    if (indicator === 'DMI') {
-      yAxes.push({ type: 'value', gridIndex: gridIdx, scale: true, splitNumber: 2, axisLabel: { fontSize: 9, show: false }, axisLine: { show: false }, splitLine: { lineStyle: { color: '#f0f0f0' } }, position: 'right' })
-
-      if (ind.length) {
-        series.push(
-          { name: 'ADX', type: 'line', data: getIndicatorSeries(ind, 'adx'), xAxisIndex: gridIdx, yAxisIndex: gridIdx, lineStyle: { width: 1, color: '#722ed1' }, symbol: 'none' },
-          { name: '+DI', type: 'line', data: getIndicatorSeries(ind, 'dmp'), xAxisIndex: gridIdx, yAxisIndex: gridIdx, lineStyle: { width: 1, color: '#1890ff' }, symbol: 'none' },
-          { name: '-DI', type: 'line', data: getIndicatorSeries(ind, 'dmn'), xAxisIndex: gridIdx, yAxisIndex: gridIdx, lineStyle: { width: 1, color: '#faad14' }, symbol: 'none' },
-        )
-      }
-    }
-
-    // 将指标名称添加到图例
-    legendData.push(indicator)
-
-    // 为当前副图添加彩色边框
-    graphicLabels.push({
-      type: 'rect',
-      left: '10%',
-      top: `${indicatorTop - 0.2}%`,
-      width: '86.5%',
-      height: `${subHeight + 0.4}%`,
-      style: {
-        fill: 'transparent',
-        stroke: indicatorColor,
-        lineWidth: 2
-      }
-    })
-
-    // 在副图顶部添加标题文字
-    graphicLabels.push({
-      type: 'text',
-      left: '11%',
-      top: `${indicatorTop + 0.3}%`,
-      style: {
-        text: indicator,
-        fill: indicatorColor,
-        fontSize: 12,
-        fontWeight: 'bold'
-      }
-    })
-
-    currentTop += subHeight + 1
-  })
+  const xIndices = xAxes.map((_, i) => i)
 
   return {
     animation: false,
     title: {
       text: mainTitle,
       left: '10%',
-      top: `${legendHeight + 1}%`,
+      top: '1%',
       textStyle: { fontSize: 10, fontWeight: 'normal', color: '#666' },
     },
     graphic: graphicLabels,
@@ -415,47 +274,291 @@ const chartOption = computed(() => {
     xAxis: xAxes,
     yAxis: yAxes,
     dataZoom: [
-      { type: 'inside', xAxisIndex: xAxes.map((_, i) => i), start: 70, end: 100 },
-      { type: 'slider', xAxisIndex: xAxes.map((_, i) => i), start: 70, end: 100, bottom: 5, height: 16 },
+      { type: 'inside', xAxisIndex: xIndices, start: 70, end: 100 },
+      { type: 'slider', xAxisIndex: xIndices, start: 70, end: 100, bottom: 2, height: 14 },
     ],
     series,
   }
 })
 
-const initChart = () => {
-  if (!chartRef.value) return
-  chart = echarts.init(chartRef.value)
-  chart.setOption(chartOption.value)
+// Generate sub-chart option for each indicator
+const getSubChartOption = (indicator: string) => {
+  const dates = props.data.map(d => d.trade_date)
+  const ind = props.indicatorData || []
+
+  const series: any[] = []
+  const legendData: string[] = []
+
+  const getLastValue = (key: string) => {
+    if (!ind.length) return '--'
+    const val = ind[ind.length - 1]?.[key]
+    return val !== null && val !== undefined ? val.toFixed(2) : '--'
+  }
+
+  let titleText = indicator
+
+  if (indicator === 'MACD') {
+    const dif = getLastValue('macd')
+    const dea = getLastValue('macd_signal')
+    titleText = `MACD DIF:${dif} DEA:${dea}`
+
+    legendData.push('DIF', 'DEA', 'MACD')
+    if (ind.length) {
+      series.push(
+        { name: 'DIF', type: 'line', data: getIndicatorSeries(ind, 'macd'), lineStyle: { width: 1, color: '#1890ff' }, symbol: 'none' },
+        { name: 'DEA', type: 'line', data: getIndicatorSeries(ind, 'macd_signal'), lineStyle: { width: 1, color: '#faad14' }, symbol: 'none' },
+        { name: 'MACD柱', type: 'bar', data: getIndicatorSeries(ind, 'macd_hist').map(v => ({ value: v, itemStyle: { color: v !== null && v >= 0 ? '#ec0000' : '#00da3c' } })) },
+      )
+    }
+  } else if (indicator === 'KDJ') {
+    const k = getLastValue('k')
+    const d = getLastValue('d')
+    const j = getLastValue('j')
+    titleText = `KDJ K:${k} D:${d} J:${j}`
+
+    legendData.push('K', 'D', 'J')
+    if (ind.length) {
+      series.push(
+        { name: 'K', type: 'line', data: getIndicatorSeries(ind, 'k'), lineStyle: { width: 1, color: '#1890ff' }, symbol: 'none' },
+        { name: 'D', type: 'line', data: getIndicatorSeries(ind, 'd'), lineStyle: { width: 1, color: '#faad14' }, symbol: 'none' },
+        { name: 'J', type: 'line', data: getIndicatorSeries(ind, 'j'), lineStyle: { width: 1, color: '#eb2f96' }, symbol: 'none' },
+      )
+    }
+  } else if (indicator === 'RSI') {
+    const rsi6 = getLastValue('rsi6')
+    const rsi12 = getLastValue('rsi12')
+    const rsi24 = getLastValue('rsi24')
+    titleText = `RSI RSI6:${rsi6} RSI12:${rsi12} RSI24:${rsi24}`
+
+    legendData.push('RSI6', 'RSI12', 'RSI24')
+    if (ind.length) {
+      series.push(
+        { name: 'RSI6', type: 'line', data: getIndicatorSeries(ind, 'rsi6'), lineStyle: { width: 1, color: '#1890ff' }, symbol: 'none' },
+        { name: 'RSI12', type: 'line', data: getIndicatorSeries(ind, 'rsi12'), lineStyle: { width: 1, color: '#faad14' }, symbol: 'none' },
+        { name: 'RSI24', type: 'line', data: getIndicatorSeries(ind, 'rsi24'), lineStyle: { width: 1, color: '#eb2f96' }, symbol: 'none' },
+      )
+    }
+  } else if (indicator === 'CCI') {
+    const cci = getLastValue('cci')
+    titleText = `CCI CCI:${cci}`
+
+    legendData.push('CCI')
+    if (ind.length) {
+      series.push(
+        { name: 'CCI', type: 'line', data: getIndicatorSeries(ind, 'cci'), lineStyle: { width: 1, color: '#722ed1' }, symbol: 'none' },
+      )
+    }
+  } else if (indicator === 'WR') {
+    const wr14 = getLastValue('wr')
+    const wr6 = getLastValue('wr6')
+    titleText = `WR WR14:${wr14} WR6:${wr6}`
+
+    legendData.push('WR14', 'WR6')
+    if (ind.length) {
+      series.push(
+        { name: 'WR14', type: 'line', data: getIndicatorSeries(ind, 'wr'), lineStyle: { width: 1, color: '#1890ff' }, symbol: 'none' },
+        { name: 'WR6', type: 'line', data: getIndicatorSeries(ind, 'wr6'), lineStyle: { width: 1, color: '#faad14' }, symbol: 'none' },
+      )
+    }
+  } else if (indicator === 'DMI') {
+    const adx = getLastValue('adx')
+    const dmp = getLastValue('dmp')
+    const dmn = getLastValue('dmn')
+    titleText = `DMI ADX:${adx} +DI:${dmp} -DI:${dmn}`
+
+    legendData.push('ADX', '+DI', '-DI')
+    if (ind.length) {
+      series.push(
+        { name: 'ADX', type: 'line', data: getIndicatorSeries(ind, 'adx'), lineStyle: { width: 1, color: '#722ed1' }, symbol: 'none' },
+        { name: '+DI', type: 'line', data: getIndicatorSeries(ind, 'dmp'), lineStyle: { width: 1, color: '#1890ff' }, symbol: 'none' },
+        { name: '-DI', type: 'line', data: getIndicatorSeries(ind, 'dmn'), lineStyle: { width: 1, color: '#faad14' }, symbol: 'none' },
+      )
+    }
+  }
+
+  return {
+    animation: false,
+    title: {
+      text: titleText,
+      left: '10%',
+      top: '2%',
+      textStyle: { fontSize: 11, fontWeight: 'normal', color: '#666' },
+    },
+    graphic: [
+      { type: 'text', left: 5, top: '10%', style: { text: indicator, fill: '#666', fontSize: 10 } },
+    ],
+    tooltip: {
+      trigger: 'axis',
+      axisPointer: { type: 'cross' },
+      backgroundColor: 'rgba(255, 255, 255, 0.95)',
+      borderColor: '#ddd',
+      textStyle: { color: '#333', fontSize: 12 },
+    },
+    legend: {
+      show: true,
+      data: legendData,
+      type: 'scroll',
+      top: 0,
+      left: 'center',
+      itemWidth: 20,
+      itemHeight: 10,
+      textStyle: { fontSize: 11 },
+      selectedMode: false,
+    },
+    grid: {
+      left: '10%',
+      right: '3%',
+      top: '15%',
+      height: '80%',
+      backgroundColor: 'transparent',
+      borderWidth: 0,
+    },
+    xAxis: {
+      type: 'category',
+      data: dates,
+      axisLine: { lineStyle: { color: '#8392A5' } },
+      splitLine: { show: false },
+      axisLabel: { fontSize: 10 },
+    },
+    yAxis: {
+      type: 'value',
+      scale: true,
+      splitNumber: 3,
+      axisLabel: { fontSize: 9 },
+      axisLine: { show: false },
+      splitLine: { lineStyle: { color: '#f0f0f0' } },
+      position: 'right',
+    },
+    dataZoom: [
+      { type: 'inside', start: 70, end: 100, disabled: false },
+    ],
+    series,
+  }
 }
 
-const handleResize = () => chart?.resize()
+// Flag to prevent infinite loops
+let isSyncing = false
 
-watch(() => props.data, () => {
-  if (chart && props.data.length > 0) {
-    chart.setOption(chartOption.value, true)
+// Sync all charts to the given range
+const syncAllCharts = (start: number, end: number) => {
+  if (isSyncing) return
+  isSyncing = true
+
+  // Sync all sub-charts
+  subIndicators.value.forEach(indicator => {
+    const chart = subCharts.value[indicator]
+    if (chart) {
+      chart.dispatchAction({
+        type: 'dataZoom',
+        start,
+        end,
+      })
+    }
+  })
+
+  setTimeout(() => { isSyncing = false }, 0)
+}
+
+// Initialize main chart
+const initMainChart = () => {
+  if (!chartRef.value) return
+  mainChart = echarts.init(chartRef.value)
+  mainChart.setOption(mainChartOption.value)
+
+  // Listen to dataZoom events on main chart
+  mainChart.on('dataZoom', (params: any) => {
+    // Get current dataZoom state
+    const opt = mainChart?.getOption()
+    if (opt?.dataZoom && Array.isArray(opt.dataZoom)) {
+      const zoom = opt.dataZoom.find((dz: any) => dz.type === 'slider' || dz.type === 'inside')
+      if (zoom) {
+        syncAllCharts(zoom.start ?? 70, zoom.end ?? 100)
+      }
+    }
+  })
+}
+
+// Initialize sub-charts
+const initSubCharts = async () => {
+  // Dispose charts that are no longer selected
+  Object.keys(subCharts.value).forEach(indicator => {
+    if (!subIndicators.value.includes(indicator)) {
+      const chart = subCharts.value[indicator]
+      chart?.dispose()
+      delete subCharts.value[indicator]
+    }
+  })
+
+  // Initialize new or update existing sub-charts
+  await nextTick()
+
+  subIndicators.value.forEach(indicator => {
+    const container = subChartRefs.value[indicator]
+    if (!container) return
+
+    if (!subCharts.value[indicator]) {
+      subCharts.value[indicator] = echarts.init(container)
+    }
+    subCharts.value[indicator].setOption(getSubChartOption(indicator))
+  })
+
+  // Initial sync from main chart
+  if (mainChart) {
+    const opt = mainChart.getOption()
+    if (opt?.dataZoom && Array.isArray(opt.dataZoom)) {
+      const zoom = opt.dataZoom.find((dz: any) => dz.type === 'slider' || dz.type === 'inside')
+      if (zoom) {
+        syncAllCharts(zoom.start ?? 70, zoom.end ?? 100)
+      }
+    }
   }
+}
+
+const handleResize = () => {
+  mainChart?.resize()
+  Object.values(subCharts.value).forEach(chart => chart.resize())
+}
+
+// Watch for data changes
+watch(() => props.data, () => {
+  if (mainChart && props.data.length > 0) {
+    mainChart.setOption(mainChartOption.value, true)
+  }
+  subIndicators.value.forEach(indicator => {
+    if (subCharts.value[indicator]) {
+      subCharts.value[indicator].setOption(getSubChartOption(indicator), true)
+    }
+  })
 }, { deep: true })
 
 watch(() => props.indicatorData, () => {
-  if (chart && props.data.length > 0) {
-    chart.setOption(chartOption.value, true)
+  if (mainChart && props.data.length > 0) {
+    mainChart.setOption(mainChartOption.value, true)
   }
+  subIndicators.value.forEach(indicator => {
+    if (subCharts.value[indicator]) {
+      subCharts.value[indicator].setOption(getSubChartOption(indicator), true)
+    }
+  })
 }, { deep: true })
 
-watch(selectedIndicators, () => {
-  if (chart && props.data.length > 0) {
-    chart.setOption(chartOption.value, true)
+watch(selectedIndicators, async () => {
+  if (mainChart && props.data.length > 0) {
+    mainChart.setOption(mainChartOption.value, true)
   }
+  await initSubCharts()
 }, { deep: true })
 
-onMounted(() => {
-  initChart()
+onMounted(async () => {
+  initMainChart()
+  await initSubCharts()
   window.addEventListener('resize', handleResize)
 })
 
 onUnmounted(() => {
   window.removeEventListener('resize', handleResize)
-  chart?.dispose()
+  mainChart?.dispose()
+  Object.values(subCharts.value).forEach(chart => chart.dispose())
 })
 </script>
 
@@ -479,7 +582,7 @@ onUnmounted(() => {
       <!-- 指标选择 -->
       <div class="indicator-selector">
         <button class="indicator-toggle" @click="showIndicatorPanel = !showIndicatorPanel">
-          📊 指标 {{ selectedIndicators.length > 0 ? `(${selectedIndicators.length})` : '' }}
+          指标 {{ selectedIndicators.length > 0 ? `(${selectedIndicators.length})` : '' }}
         </button>
 
         <!-- 指标面板 -->
@@ -501,8 +604,16 @@ onUnmounted(() => {
       </div>
     </div>
 
-    <!-- 图表 -->
-    <div ref="chartRef" class="kline-chart"></div>
+    <!-- 主图表 (K线 + 成交量) -->
+    <div ref="chartRef" class="main-chart"></div>
+
+    <!-- 子指标图表 (独立画布) -->
+    <div
+      v-for="indicator in subIndicators"
+      :key="indicator"
+      :ref="(el: any) => setSubChartRef(el, indicator)"
+      class="sub-chart"
+    ></div>
   </div>
 </template>
 
@@ -624,9 +735,18 @@ onUnmounted(() => {
   color: #1890ff;
 }
 
-.kline-chart {
+.main-chart {
   width: 100%;
-  height: 650px;
-  min-height: 500px;
+  height: 450px;
+  border: 1px solid #f0f0f0;
+  border-radius: 4px;
+}
+
+.sub-chart {
+  width: 100%;
+  height: 250px;
+  margin-top: 16px;
+  border: 1px solid #f0f0f0;
+  border-radius: 4px;
 }
 </style>
