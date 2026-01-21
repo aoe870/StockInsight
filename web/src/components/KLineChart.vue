@@ -172,6 +172,19 @@ const chartOption = computed(() => {
   if (selectedIndicators.value.includes('WR')) subIndicators.push('WR')
   if (selectedIndicators.value.includes('DMI')) subIndicators.push('DMI')
 
+  // 预估图例数据项数量（用于提前计算legendHeight）
+  let estimatedLegendItems = 1 // K线
+  if (selectedIndicators.value.includes('MA')) estimatedLegendItems += 4
+  if (selectedIndicators.value.includes('BOLL')) estimatedLegendItems += 3
+  if (selectedIndicators.value.includes('MACD')) estimatedLegendItems += 3
+  if (selectedIndicators.value.includes('KDJ')) estimatedLegendItems += 3
+  if (selectedIndicators.value.includes('RSI')) estimatedLegendItems += 3
+  if (selectedIndicators.value.includes('CCI')) estimatedLegendItems += 1
+  if (selectedIndicators.value.includes('WR')) estimatedLegendItems += 2
+  if (selectedIndicators.value.includes('DMI')) estimatedLegendItems += 3
+  // 计算图例占用的空间（提前计算，供后续grid布局使用）
+  const legendHeight = estimatedLegendItems > 8 ? 40 : estimatedLegendItems > 4 ? 30 : 20
+
   // 动态计算 grid 布局 - 根据指标数量调整
   const subCount = subIndicators.length
   // 主图高度随指标数量减少
@@ -182,8 +195,8 @@ const chartOption = computed(() => {
   const subHeight = subCount > 0 ? Math.max(12, Math.floor(availableHeight / subCount)) : 0
 
   const grids: any[] = [
-    { left: '10%', right: '3%', top: '6%', height: `${mainHeight}%` },
-    { left: '10%', right: '3%', top: `${mainHeight + 8}%`, height: `${volHeight}%` },
+    { left: '10%', right: '3%', top: `${legendHeight + 6}%`, height: `${mainHeight}%` },
+    { left: '10%', right: '3%', top: `${legendHeight + mainHeight + 8}%`, height: `${volHeight}%` },
   ]
 
   const xAxes: any[] = [
@@ -197,7 +210,7 @@ const chartOption = computed(() => {
   ]
 
   // 添加指标子图
-  let currentTop = mainHeight + volHeight + 10
+  let currentTop = legendHeight + mainHeight + volHeight + 10
   subIndicators.forEach((indicator, idx) => {
     const gridIdx = grids.length
     const isLast = idx === subIndicators.length - 1
@@ -291,10 +304,10 @@ const chartOption = computed(() => {
 
   // 生成左侧指标标签
   const graphicLabels: any[] = [
-    { type: 'text', left: 5, top: `${6}%`, style: { text: 'K线', fill: '#666', fontSize: 10 } },
-    { type: 'text', left: 5, top: `${mainHeight + 8}%`, style: { text: 'VOL', fill: '#666', fontSize: 10 } },
+    { type: 'text', left: 5, top: `${legendHeight + 6}%`, style: { text: 'K线', fill: '#666', fontSize: 10 } },
+    { type: 'text', left: 5, top: `${legendHeight + mainHeight + 8}%`, style: { text: 'VOL', fill: '#666', fontSize: 10 } },
   ]
-  let labelTop = mainHeight + volHeight + 10
+  let labelTop = legendHeight + mainHeight + volHeight + 10
   subIndicators.forEach((indicator) => {
     graphicLabels.push({
       type: 'text', left: 5, top: `${labelTop}%`,
@@ -308,7 +321,7 @@ const chartOption = computed(() => {
     title: {
       text: mainTitle,
       left: '10%',
-      top: '1%',
+      top: `${legendHeight + 1}%`,
       textStyle: { fontSize: 10, fontWeight: 'normal', color: '#666' },
     },
     graphic: graphicLabels,
@@ -334,7 +347,15 @@ const chartOption = computed(() => {
       }
     },
     legend: {
-      show: false,
+      show: true,
+      data: legendData,
+      type: 'scroll',
+      top: 0,
+      left: 'center',
+      itemWidth: 20,
+      itemHeight: 10,
+      textStyle: { fontSize: 11 },
+      selectedMode: false,
     },
     grid: grids,
     xAxis: xAxes,
