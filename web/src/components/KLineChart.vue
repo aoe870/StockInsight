@@ -111,12 +111,12 @@ const chartOption = computed(() => {
     },
   ]
 
-  const legendData = ['K线']
+  const legendData = ['K线', '成交量']
 
-  // 主图指标说明文字
+  // 主图指标说明文字（在标题中显示，不放入图例）
   const mainIndicatorLabels: string[] = []
 
-  // MA 均线
+  // MA 均线 - 不加入图例
   if (selectedIndicators.value.includes('MA')) {
     const ma5Val = ma5[ma5.length - 1]?.toFixed(2) || '--'
     const ma10Val = ma10[ma10.length - 1]?.toFixed(2) || '--'
@@ -130,10 +130,9 @@ const chartOption = computed(() => {
       { name: 'MA20', type: 'line', data: ma20, smooth: true, lineStyle: { width: 1, color: '#ff4d4f' }, symbol: 'none' },
       { name: 'MA60', type: 'line', data: ma60, smooth: true, lineStyle: { width: 1, color: '#52c41a' }, symbol: 'none' },
     )
-    legendData.push('MA5', 'MA10', 'MA20', 'MA60')
   }
 
-  // BOLL 布林带
+  // BOLL 布林带 - 不加入图例
   if (selectedIndicators.value.includes('BOLL') && ind.length) {
     const bollUpper = ind[ind.length - 1]?.boll_upper?.toFixed(2) || '--'
     const bollMid = ind[ind.length - 1]?.boll_mid?.toFixed(2) || '--'
@@ -145,7 +144,6 @@ const chartOption = computed(() => {
       { name: 'BOLL中轨', type: 'line', data: getIndicatorSeries(ind, 'boll_mid'), lineStyle: { width: 1, color: '#722ed1' }, symbol: 'none' },
       { name: 'BOLL下轨', type: 'line', data: getIndicatorSeries(ind, 'boll_lower'), lineStyle: { width: 1, type: 'dashed', color: '#eb2f96' }, symbol: 'none' },
     )
-    legendData.push('BOLL上轨', 'BOLL中轨', 'BOLL下轨')
   }
 
   // 主图标题显示指标值
@@ -182,8 +180,8 @@ const chartOption = computed(() => {
   if (selectedIndicators.value.includes('CCI')) estimatedLegendItems += 1
   if (selectedIndicators.value.includes('WR')) estimatedLegendItems += 2
   if (selectedIndicators.value.includes('DMI')) estimatedLegendItems += 3
-  // 计算图例占用的空间（提前计算，供后续grid布局使用）
-  const legendHeight = estimatedLegendItems > 8 ? 40 : estimatedLegendItems > 4 ? 30 : 20
+  // 减少图例占用的空间
+  const legendHeight = estimatedLegendItems > 8 ? 25 : estimatedLegendItems > 4 ? 20 : 18
 
   // 动态计算 grid 布局 - 根据指标数量调整
   const subCount = subIndicators.length
@@ -195,8 +193,24 @@ const chartOption = computed(() => {
   const subHeight = subCount > 0 ? Math.max(12, Math.floor(availableHeight / subCount)) : 0
 
   const grids: any[] = [
-    { left: '10%', right: '3%', top: `${legendHeight + 6}%`, height: `${mainHeight}%` },
-    { left: '10%', right: '3%', top: `${legendHeight + mainHeight + 8}%`, height: `${volHeight}%` },
+    {
+      left: '10%',
+      right: '3%',
+      top: `${legendHeight + 6}%`,
+      height: `${mainHeight}%`,
+      backgroundColor: 'rgba(255, 255, 255, 0)',
+      borderWidth: 0,
+      show: true
+    },
+    {
+      left: '10%',
+      right: '3%',
+      top: `${legendHeight + mainHeight + 8}%`,
+      height: `${volHeight}%`,
+      backgroundColor: 'rgba(0, 0, 0, 0.01)',
+      borderWidth: 0,
+      show: true
+    },
   ]
 
   const xAxes: any[] = [
@@ -211,10 +225,40 @@ const chartOption = computed(() => {
 
   // 添加指标子图
   let currentTop = legendHeight + mainHeight + volHeight + 10
+  // 为不同指标定义不同的背景色和标题颜色（更明显）
+  const indicatorStyles: Record<string, string> = {
+    'MACD': '#1890ff',
+    'KDJ': '#faad14',
+    'RSI': '#eb2f96',
+    'CCI': '#722ed1',
+    'WR': '#52c41a',
+    'DMI': '#13c2c2',
+  }
+
+  // 生成左侧指标标签和副图标题栏（提前初始化数组）
+  const graphicLabels: any[] = [
+    { type: 'text', left: 5, top: `${legendHeight + 6}%`, style: { text: 'K线', fill: '#666', fontSize: 10 } },
+    { type: 'text', left: 5, top: `${legendHeight + mainHeight + 8}%`, style: { text: 'VOL', fill: '#666', fontSize: 10 } },
+  ]
+
   subIndicators.forEach((indicator, idx) => {
     const gridIdx = grids.length
     const isLast = idx === subIndicators.length - 1
-    grids.push({ left: '10%', right: '3%', top: `${currentTop}%`, height: `${subHeight}%` })
+    const indicatorColor = indicatorStyles[indicator] || '#666'
+
+    // 在循环中保存当前指标的top位置，用于后面添加graphic
+    const indicatorTop = currentTop
+
+    grids.push({
+      left: '10%',
+      right: '3%',
+      top: `${currentTop}%`,
+      height: `${subHeight}%`,
+      backgroundColor: 'rgba(0, 0, 0, 0.02)',
+      borderWidth: 0,
+      borderColor: 'transparent',
+      show: true
+    })
     xAxes.push({ type: 'category', data: dates, gridIndex: gridIdx, axisLine: { lineStyle: { color: '#8392A5' } }, splitLine: { show: false }, axisLabel: { show: isLast, fontSize: 10 } })
 
     // 获取指标当前值用于显示
@@ -233,7 +277,6 @@ const chartOption = computed(() => {
           { name: 'DEA', type: 'line', data: getIndicatorSeries(ind, 'macd_signal'), xAxisIndex: gridIdx, yAxisIndex: gridIdx, lineStyle: { width: 1, color: '#faad14' }, symbol: 'none' },
           { name: 'MACD柱', type: 'bar', data: getIndicatorSeries(ind, 'macd_hist').map(v => ({ value: v, itemStyle: { color: v !== null && v >= 0 ? '#ec0000' : '#00da3c' } })), xAxisIndex: gridIdx, yAxisIndex: gridIdx },
         )
-        legendData.push('DIF', 'DEA', 'MACD柱')
       }
     }
 
@@ -246,7 +289,6 @@ const chartOption = computed(() => {
           { name: 'D', type: 'line', data: getIndicatorSeries(ind, 'd'), xAxisIndex: gridIdx, yAxisIndex: gridIdx, lineStyle: { width: 1, color: '#faad14' }, symbol: 'none' },
           { name: 'J', type: 'line', data: getIndicatorSeries(ind, 'j'), xAxisIndex: gridIdx, yAxisIndex: gridIdx, lineStyle: { width: 1, color: '#eb2f96' }, symbol: 'none' },
         )
-        legendData.push('K', 'D', 'J')
       }
     }
 
@@ -259,7 +301,6 @@ const chartOption = computed(() => {
           { name: 'RSI12', type: 'line', data: getIndicatorSeries(ind, 'rsi12'), xAxisIndex: gridIdx, yAxisIndex: gridIdx, lineStyle: { width: 1, color: '#faad14' }, symbol: 'none' },
           { name: 'RSI24', type: 'line', data: getIndicatorSeries(ind, 'rsi24'), xAxisIndex: gridIdx, yAxisIndex: gridIdx, lineStyle: { width: 1, color: '#eb2f96' }, symbol: 'none' },
         )
-        legendData.push('RSI6', 'RSI12', 'RSI24')
       }
     }
 
@@ -270,7 +311,6 @@ const chartOption = computed(() => {
         series.push(
           { name: 'CCI', type: 'line', data: getIndicatorSeries(ind, 'cci'), xAxisIndex: gridIdx, yAxisIndex: gridIdx, lineStyle: { width: 1, color: '#722ed1' }, symbol: 'none' },
         )
-        legendData.push('CCI')
       }
     }
 
@@ -282,7 +322,6 @@ const chartOption = computed(() => {
           { name: 'WR14', type: 'line', data: getIndicatorSeries(ind, 'wr'), xAxisIndex: gridIdx, yAxisIndex: gridIdx, lineStyle: { width: 1, color: '#1890ff' }, symbol: 'none' },
           { name: 'WR6', type: 'line', data: getIndicatorSeries(ind, 'wr6'), xAxisIndex: gridIdx, yAxisIndex: gridIdx, lineStyle: { width: 1, color: '#faad14' }, symbol: 'none' },
         )
-        legendData.push('WR14', 'WR6')
       }
     }
 
@@ -295,25 +334,40 @@ const chartOption = computed(() => {
           { name: '+DI', type: 'line', data: getIndicatorSeries(ind, 'dmp'), xAxisIndex: gridIdx, yAxisIndex: gridIdx, lineStyle: { width: 1, color: '#1890ff' }, symbol: 'none' },
           { name: '-DI', type: 'line', data: getIndicatorSeries(ind, 'dmn'), xAxisIndex: gridIdx, yAxisIndex: gridIdx, lineStyle: { width: 1, color: '#faad14' }, symbol: 'none' },
         )
-        legendData.push('ADX', '+DI', '-DI')
       }
     }
 
-    currentTop += subHeight + 1
-  })
+    // 将指标名称添加到图例
+    legendData.push(indicator)
 
-  // 生成左侧指标标签
-  const graphicLabels: any[] = [
-    { type: 'text', left: 5, top: `${legendHeight + 6}%`, style: { text: 'K线', fill: '#666', fontSize: 10 } },
-    { type: 'text', left: 5, top: `${legendHeight + mainHeight + 8}%`, style: { text: 'VOL', fill: '#666', fontSize: 10 } },
-  ]
-  let labelTop = legendHeight + mainHeight + volHeight + 10
-  subIndicators.forEach((indicator) => {
+    // 为当前副图添加彩色边框
     graphicLabels.push({
-      type: 'text', left: 5, top: `${labelTop}%`,
-      style: { text: indicator, fill: '#1890ff', fontSize: 10, fontWeight: 'bold' }
+      type: 'rect',
+      left: '10%',
+      top: `${indicatorTop - 0.2}%`,
+      width: '86.5%',
+      height: `${subHeight + 0.4}%`,
+      style: {
+        fill: 'transparent',
+        stroke: indicatorColor,
+        lineWidth: 2
+      }
     })
-    labelTop += subHeight + 1
+
+    // 在副图顶部添加标题文字
+    graphicLabels.push({
+      type: 'text',
+      left: '11%',
+      top: `${indicatorTop + 0.3}%`,
+      style: {
+        text: indicator,
+        fill: indicatorColor,
+        fontSize: 12,
+        fontWeight: 'bold'
+      }
+    })
+
+    currentTop += subHeight + 1
   })
 
   return {
