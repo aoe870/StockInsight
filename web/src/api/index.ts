@@ -328,7 +328,8 @@ export const screenerApi = {
 }
 
 // ==================== 认证 API ====================
-import { UserInfo, setAuth, clearAuth } from '@/stores/auth'
+import type { UserInfo } from '@/stores/auth'
+import { setAuth } from '@/stores/auth'
 
 export interface LoginRequest {
   username: string

@@ -194,7 +194,7 @@ async def get_kline(
     klines = result.scalars().all()
 
     # 转换数据，按日期升序
-    data = [KLineData.model_validate(k) for k in reversed(klines)]
+    data = [KLineData.from_orm(k) for k in reversed(klines)]
 
     # 如果需要聚合周期
     if period != "daily" and data:

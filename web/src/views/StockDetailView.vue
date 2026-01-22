@@ -327,13 +327,6 @@ const onTabChange = async (tabName: string) => {
   }
 }
 
-// 格式化金额
-const formatAmount = (amount: number) => {
-  if (amount >= 100000000) return (amount / 100000000).toFixed(2) + '亿'
-  if (amount >= 10000) return (amount / 10000).toFixed(2) + '万'
-  return amount.toFixed(2)
-}
-
 // 数据范围变化
 const onDataRangeChange = () => {
   fetchData()

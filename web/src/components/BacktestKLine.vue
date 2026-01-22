@@ -95,7 +95,7 @@ const processTradeSignals = () => {
     : props.trades
 
   // 处理每个交易记录
-  filteredTrades.forEach((trade, idx) => {
+  filteredTrades.forEach((trade, _idx) => {
     const dateIndex = dateIndexMap.get(trade.date)
     if (dateIndex === undefined) return
 
@@ -127,11 +127,6 @@ const processTradeSignals = () => {
 
   return { buySignals, sellSignals }
 }
-
-// Main chart indicators
-const mainChartIndicators = computed(() => {
-  return selectedIndicators.value.filter(i => ['MA', 'BOLL', 'VOL'].includes(i))
-})
 
 // Sub indicators
 const subIndicators = computed(() => {
@@ -182,7 +177,6 @@ const mainChartOption = computed(() => {
         },
         tooltip: {
           formatter: (params: any) => {
-            const signal = params.data
             const trade = props.trades.find(t =>
               t.date === params.coord[0] &&
               Math.abs(t.price - parseFloat(params.value)) < 0.01
@@ -537,7 +531,7 @@ const initMainChart = () => {
   mainChart = echarts.init(chartRef.value)
   mainChart.setOption(mainChartOption.value)
 
-  mainChart.on('dataZoom', (params: any) => {
+  mainChart.on('dataZoom', (_params: any) => {
     const opt = mainChart?.getOption()
     if (opt?.dataZoom && Array.isArray(opt.dataZoom)) {
       const zoom = opt.dataZoom.find((dz: any) => dz.type === 'slider' || dz.type === 'inside')

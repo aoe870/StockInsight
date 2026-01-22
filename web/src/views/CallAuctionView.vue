@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { ref, onMounted, onUnmounted, computed } from 'vue'
-import { ElMessage, ElDatePicker, ElButton, ElTable, ElTableColumn, ElTag, ElStatistic, ElRow, ElCol, ElEmpty, ElAlert } from 'element-plus'
+import { ElMessage, ElButton, ElTable, ElTableColumn, ElTag, ElRow, ElCol, ElEmpty, ElAlert } from 'element-plus'
 import { callAuctionApi, type CallAuctionData, type CallAuctionStats } from '@/api/callAuction'
 
 // 数据状态
@@ -12,7 +12,7 @@ const displayDate = ref('') // 显示当前查询的日期
 
 // 自动刷新
 const autoRefresh = ref(true)
-const refreshInterval = ref<NodeJS.Timeout | null>(null)
+const refreshInterval = ref<number | null>(null)
 
 // 判断应该查询哪天的数据
 const getQueryDate = (): { date: string, isToday: boolean, hint: string } => {

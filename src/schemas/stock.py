@@ -4,9 +4,10 @@
 
 from datetime import date, datetime
 from decimal import Decimal
-from typing import Optional, List
+from typing import Optional, List, Any
 
-from pydantic import BaseModel, Field, ConfigDict
+from pydantic import BaseModel, Field, ConfigDict, field_serializer
+import json
 
 
 # ==================== 股票基础信息 ====================
@@ -46,14 +47,29 @@ class KLineData(BaseModel):
     model_config = ConfigDict(from_attributes=True, populate_by_name=True)
 
     trade_date: date = Field(..., description="交易日期")
-    open: Optional[Decimal] = Field(None, validation_alias="open_price", description="开盘价")
-    close: Optional[Decimal] = Field(None, validation_alias="close_price", description="收盘价")
-    high: Optional[Decimal] = Field(None, validation_alias="high_price", description="最高价")
-    low: Optional[Decimal] = Field(None, validation_alias="low_price", description="最低价")
+    open: Optional[float] = Field(None, description="开盘价")
+    close: Optional[float] = Field(None, description="收盘价")
+    high: Optional[float] = Field(None, description="最高价")
+    low: Optional[float] = Field(None, description="最低价")
     volume: Optional[int] = Field(None, description="成交量")
-    amount: Optional[Decimal] = Field(None, description="成交额")
-    change_pct: Optional[Decimal] = Field(None, description="涨跌幅%")
-    turnover: Optional[Decimal] = Field(None, description="换手率%")
+    amount: Optional[float] = Field(None, description="成交额")
+    change_pct: Optional[float] = Field(None, description="涨跌幅%")
+    turnover: Optional[float] = Field(None, description="换手率%")
+
+    @classmethod
+    def from_orm(cls, obj: Any) -> "KLineData":
+        """从 SQLAlchemy 模型创建实例"""
+        return cls(
+            trade_date=obj.trade_date,
+            open=float(obj.open_price) if obj.open_price is not None else None,
+            close=float(obj.close_price) if obj.close_price is not None else None,
+            high=float(obj.high_price) if obj.high_price is not None else None,
+            low=float(obj.low_price) if obj.low_price is not None else None,
+            volume=obj.volume,
+            amount=float(obj.amount) if obj.amount is not None else None,
+            change_pct=float(obj.change_pct) if obj.change_pct is not None else None,
+            turnover=float(obj.turnover) if obj.turnover is not None else None,
+        )
 
 
 class KLineQuery(BaseModel):

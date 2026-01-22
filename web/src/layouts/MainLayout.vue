@@ -6,7 +6,6 @@ import {
   TrendCharts,
   Star,
   Bell,
-  Setting,
   Fold,
   Expand,
   Filter,

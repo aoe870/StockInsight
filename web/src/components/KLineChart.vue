@@ -53,17 +53,23 @@ const selectedIndicators = ref<string[]>(['MA', 'VOL', 'MACD'])
 const showIndicatorPanel = ref(false)
 
 // 计算均线
-const calculateMA = (data: number[], period: number): (number | null)[] => {
+const calculateMA = (data: (number | null | undefined)[], period: number): (number | null)[] => {
   const result: (number | null)[] = []
   for (let i = 0; i < data.length; i++) {
-    if (i < period - 1) {
-      result.push(null)
-    } else {
-      let sum = 0
-      for (let j = 0; j < period; j++) {
-        sum += data[i - j]
+    // Collect valid numbers for the period
+    const values: number[] = []
+    for (let j = 0; j < period && (i - j) >= 0; j++) {
+      const val = data[i - j]
+      if (val !== null && val !== undefined && !isNaN(val)) {
+        values.push(val)
       }
+    }
+    // Only calculate MA if we have enough valid data points
+    if (values.length >= period) {
+      const sum = values.reduce((a, b) => a + b, 0)
       result.push(+(sum / period).toFixed(2))
+    } else {
+      result.push(null)
     }
   }
   return result
@@ -92,11 +98,6 @@ const getIndicatorSeries = (indicatorData: Record<string, any>[] | undefined, ke
   return indicatorData.map(d => d[key] ?? null)
 }
 
-// Main chart indicators (MA, BOLL, VOL)
-const mainChartIndicators = computed(() => {
-  return selectedIndicators.value.filter(i => ['MA', 'BOLL', 'VOL'].includes(i))
-})
-
 // Sub indicators (MACD, KDJ, RSI, CCI, WR, DMI)
 const subIndicators = computed(() => {
   return selectedIndicators.value.filter(i => ['MACD', 'KDJ', 'RSI', 'CCI', 'WR', 'DMI'].includes(i))
@@ -109,10 +110,41 @@ const mainChartOption = computed(() => {
   const volumes = props.data.map(d => d.volume)
   const closes = props.data.map(d => d.close)
 
+  // Debug logging - check data quality
+  const nullCount = closes.filter(c => c === null || c === undefined || isNaN(c)).length
+  if (props.data.length > 0) {
+    console.log('[KLineChart] Data quality check:', {
+      dataLength: props.data.length,
+      nullCloseCount: nullCount,
+      sampleData: props.data.slice(0, 3).map(d => ({
+        date: d.trade_date,
+        close: d.close,
+        open: d.open,
+        high: d.high,
+        low: d.low
+      })),
+      selectedIndicators: selectedIndicators.value
+    })
+  }
+
   const ma5 = calculateMA(closes, 5)
   const ma10 = calculateMA(closes, 10)
   const ma20 = calculateMA(closes, 20)
   const ma60 = calculateMA(closes, 60)
+
+  // Debug logging
+  if (props.data.length > 0 && selectedIndicators.value.includes('MA')) {
+    console.log('[KLineChart] MA calculation:', {
+      dataLength: props.data.length,
+      ma5Length: ma5.length,
+      ma10Length: ma10.length,
+      ma20Length: ma20.length,
+      ma60Length: ma60.length,
+      ma5Last: ma5[ma5.length - 1],
+      ma10Last: ma10[ma10.length - 1],
+      selectedIndicators: selectedIndicators.value
+    })
+  }
 
   const ind = props.indicatorData || []
 
@@ -144,10 +176,10 @@ const mainChartOption = computed(() => {
     mainIndicatorLabels.push(`MA5:${ma5Val}`, `MA10:${ma10Val}`, `MA20:${ma20Val}`, `MA60:${ma60Val}`)
 
     series.push(
-      { name: 'MA5', type: 'line', data: ma5, smooth: true, lineStyle: { width: 1, color: '#f6a700' }, symbol: 'none' },
-      { name: 'MA10', type: 'line', data: ma10, smooth: true, lineStyle: { width: 1, color: '#1890ff' }, symbol: 'none' },
-      { name: 'MA20', type: 'line', data: ma20, smooth: true, lineStyle: { width: 1, color: '#ff4d4f' }, symbol: 'none' },
-      { name: 'MA60', type: 'line', data: ma60, smooth: true, lineStyle: { width: 1, color: '#52c41a' }, symbol: 'none' },
+      { name: 'MA5', type: 'line', data: ma5, smooth: true, lineStyle: { width: 2, color: '#f6a700' }, symbol: 'none' },
+      { name: 'MA10', type: 'line', data: ma10, smooth: true, lineStyle: { width: 2, color: '#1890ff' }, symbol: 'none' },
+      { name: 'MA20', type: 'line', data: ma20, smooth: true, lineStyle: { width: 2, color: '#ff4d4f' }, symbol: 'none' },
+      { name: 'MA60', type: 'line', data: ma60, smooth: true, lineStyle: { width: 2, color: '#52c41a' }, symbol: 'none' },
     )
   }
 
@@ -466,7 +498,7 @@ const initMainChart = () => {
   mainChart.setOption(mainChartOption.value)
 
   // Listen to dataZoom events on main chart
-  mainChart.on('dataZoom', (params: any) => {
+  mainChart.on('dataZoom', (_params: any) => {
     // Get current dataZoom state
     const opt = mainChart?.getOption()
     if (opt?.dataZoom && Array.isArray(opt.dataZoom)) {
