@@ -18,7 +18,9 @@
       "Bash(npm run dev:*)",
       "Bash(Get-Process -Name python -ErrorAction SilentlyContinue)",
       "Bash(Select-Object:*)",
-      "Bash(xargs:*)"
+      "Bash(xargs:*)",
+      "Bash(dir:*)",
+      "Bash(del:*)"
     ]
   }
 }

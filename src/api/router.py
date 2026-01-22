@@ -13,6 +13,7 @@ from src.api.sync import router as sync_router
 from src.api.index import router as index_router
 from src.api.screener import router as screener_router
 from src.api.backtest import router as backtest_router
+from src.api.call_auction import router as call_auction_router
 
 
 # 创建主路由
@@ -28,4 +29,5 @@ api_router.include_router(sync_router)
 api_router.include_router(index_router)
 api_router.include_router(screener_router)
 api_router.include_router(backtest_router)
+api_router.include_router(call_auction_router)
 

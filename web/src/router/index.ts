@@ -43,6 +43,12 @@ const routes: RouteRecordRaw[] = [
     meta: { title: '策略回测' },
   },
   {
+    path: '/call-auction',
+    name: 'CallAuction',
+    component: () => import('@/views/CallAuctionView.vue'),
+    meta: { title: '集合竞价' },
+  },
+  {
     path: '/stock/:code',
     name: 'StockDetail',
     component: () => import('@/views/StockDetailView.vue'),

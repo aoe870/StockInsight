@@ -337,12 +337,143 @@ class RsiMacdStrategy(StockScreenerStrategy):
         return selected
 
 
+class FundamentalStrategy(StockScreenerStrategy):
+    """
+    基本面选股策略
+
+    基于 PE、PB、EPS、净利率、收入/利润增长率等财务指标筛选股票
+    参考：tkfy920/tushare选股分析
+
+    参数:
+        pe_max: 最大市盈率
+        pb_max: 最大市净率
+        eps_min: 最小每股收益(元)
+        npr_min: 最小净利率(%)
+        rev_growth_min: 最小收入同比增长(%)
+        profit_growth_min: 最小利润同比增长(%)
+        reserve_min: 最小每股公积金(元)
+        max_cap: 最大市值(亿元)
+        max_float: 最大流通股本(亿股)
+    """
+
+    params = (
+        ('pe_max', 20),
+        ('pb_max', 2),
+        ('eps_min', 1),
+        ('npr_min', 15),
+        ('rev_growth_min', 15),
+        ('profit_growth_min', 15),
+        ('reserve_min', 3),
+        ('max_cap', 500),
+        ('max_float', 20),
+    )
+
+    def __init__(self):
+        super().__init__()
+
+        # 缓存基本面数据 {code: fundamental_data}
+        self.fundamental_data: Dict[str, Dict] = {}
+
+    def next(self):
+        """每个交易日调用"""
+        current_date = self.datas[0].datetime.date(0)
+
+        # 检查是否需要调仓
+        if self._should_rebalance(current_date):
+            self._execute_rebalance(current_date)
+
+        # 记录资金曲线
+        self._record_equity(current_date)
+
+        # 检查持仓天数，卖出到期的股票
+        self._check_expired_positions(current_date)
+
+    def select_stocks(self) -> List[str]:
+        """基于基本面条件选股"""
+        selected = []
+
+        # 从缓存的基本面数据中筛选
+        for code, data in self.fundamental_data.items():
+            # 检查是否已持仓
+            if code in self.position_info:
+                continue
+
+            # 检查基本面条件
+            if self._check_fundamental_conditions(data):
+                selected.append(code)
+
+        return selected
+
+    def _check_fundamental_conditions(self, data: Dict) -> bool:
+        """检查基本面筛选条件"""
+        try:
+            # 估值条件
+            pe = data.get('pe')
+            pb = data.get('pb')
+            if pe is None or pb is None:
+                return False
+            if not (0 < pe <= self.params.pe_max):
+                return False
+            if not (0 < pb <= self.params.pb_max):
+                return False
+
+            # 盈利能力
+            eps = data.get('eps')
+            npr = data.get('net_profit_margin')
+            if eps is None or npr is None:
+                return False
+            if eps < self.params.eps_min:
+                return False
+            if npr < self.params.npr_min:
+                return False
+
+            # 成长性
+            rev_yoy = data.get('revenue_yoy')
+            profit_yoy = data.get('profit_yoy')
+            if rev_yoy is None or profit_yoy is None:
+                return False
+            if rev_yoy < self.params.rev_growth_min:
+                return False
+            if profit_yoy < self.params.profit_growth_min:
+                return False
+
+            # 财务实力
+            reserve = data.get('reserve_per_share')
+            if reserve is None:
+                return False
+            if reserve < self.params.reserve_min:
+                return False
+
+            # 规模条件
+            market_cap = data.get('total_market_cap')
+            float_shares = data.get('circulating_shares')
+            if market_cap is None or float_shares is None:
+                return False
+            # 转换为亿元单位
+            market_cap_billion = market_cap / 100000000
+            float_shares_billion = float_shares / 100000000
+            if market_cap_billion > self.params.max_cap:
+                return False
+            if float_shares_billion > self.params.max_float:
+                return False
+
+            return True
+
+        except Exception:
+            return False
+
+    def set_fundamental_data(self, fundamental_data: Dict[str, Dict]):
+        """设置基本面数据（在回测开始前调用）"""
+        self.fundamental_data = fundamental_data
+
+
 # 策略工厂
 class StrategyFactory:
     """策略工厂"""
 
     strategies = {
         "rsi_macd": RsiMacdStrategy,
+        "fundamental": FundamentalStrategy,
     }
 
     @classmethod
@@ -382,6 +513,23 @@ class StrategyFactory:
                     {"name": "rsi_threshold", "display_name": "RSI阈值", "default": 30, "min": 20, "max": 50},
                     {"name": "macd_fast", "display_name": "MACD快线", "default": 12, "min": 5, "max": 20},
                     {"name": "macd_slow", "display_name": "MACD慢线", "default": 26, "min": 15, "max": 40},
+                ],
+            },
+            {
+                "name": "fundamental",
+                "display_name": "基本面选股",
+                "description": "基于PE、PB、EPS、净利率、收入/利润增长率等财务指标筛选优质股票",
+                "category": "fundamental",
+                "params": [
+                    {"name": "pe_max", "display_name": "最大市盈率", "default": 20, "min": 5, "max": 100},
+                    {"name": "pb_max", "display_name": "最大市净率", "default": 2, "min": 0.5, "max": 10},
+                    {"name": "eps_min", "display_name": "最小每股收益(元)", "default": 1, "min": 0, "max": 10},
+                    {"name": "npr_min", "display_name": "最小净利率(%)", "default": 15, "min": 0, "max": 100},
+                    {"name": "rev_growth_min", "display_name": "最小收入增长(%)", "default": 15, "min": -50, "max": 200},
+                    {"name": "profit_growth_min", "display_name": "最小利润增长(%)", "default": 15, "min": -50, "max": 200},
+                    {"name": "reserve_min", "display_name": "最小每股公积金(元)", "default": 3, "min": 0, "max": 20},
+                    {"name": "max_cap", "display_name": "最大市值(亿元)", "default": 500, "min": 10, "max": 10000},
+                    {"name": "max_float", "display_name": "最大流通股本(亿股)", "default": 20, "min": 1, "max": 500},
                 ],
             }
         ]

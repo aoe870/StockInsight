@@ -6,12 +6,12 @@
 
 import backtrader as bt
 from datetime import date, datetime
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Any
 import pandas as pd
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from src.models.stock import StockBasics, StockDailyK
+from src.models.stock import StockBasics, StockDailyK, StockFundamentals
 from src.core.database import get_db
 
 
@@ -211,3 +211,48 @@ class DataLoader:
             {"code": code, "name": name, "industry": ind}
             for code, name, ind in stocks
         ]
+
+    @staticmethod
+    async def load_fundamental_data(
+        codes: List[str],
+        session: AsyncSession
+    ) -> Dict[str, Dict[str, Any]]:
+        """
+        加载基本面数据
+
+        参数:
+            codes: 股票代码列表
+            session: 数据库会话
+
+        返回:
+            {code: {pe, pb, eps, ...}} 格式的字典
+        """
+        from sqlalchemy import select, desc
+
+        fundamental_data = {}
+
+        # 获取每只股票的最新基本面数据
+        for code in codes:
+            query = select(StockFundamentals).where(
+                StockFundamentals.code == code
+            ).order_by(desc(StockFundamentals.end_date)).limit(1)
+
+            result = await session.execute(query)
+            fund = result.first()
+
+            if fund:
+                fundamental_data[code] = {
+                    "pe": float(fund.pe) if fund.pe else None,
+                    "pb": float(fund.pb) if fund.pb else None,
+                    "eps": float(fund.eps) if fund.eps else None,
+                    "net_profit_margin": float(fund.net_profit_margin) if fund.net_profit_margin else None,
+                    "gross_profit_margin": float(fund.gross_profit_margin) if fund.gross_profit_margin else None,
+                    "revenue_yoy": float(fund.revenue_yoy) if fund.revenue_yoy else None,
+                    "profit_yoy": float(fund.profit_yoy) if fund.profit_yoy else None,
+                    "reserve_per_share": float(fund.reserve_per_share) if fund.reserve_per_share else None,
+                    "total_market_cap": float(fund.total_market_cap) if fund.total_market_cap else None,
+                    "circulating_shares": float(fund.circulating_shares) if fund.circulating_shares else None,
+                    "roe": float(fund.roe) if fund.roe else None,
+                }
+
+        return fundamental_data

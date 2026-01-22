@@ -12,7 +12,7 @@ from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.dialects.postgresql import insert
 
-from src.models.stock import StockBasics, StockDailyK
+from src.models.stock import StockBasics, StockDailyK, StockCallAuction
 from src.models.alert import SyncLog
 from src.core.database import get_db_session
 from src.utils.logger import logger
@@ -265,6 +265,285 @@ class DataSyncService:
             sync_log.error_message = str(e)
             sync_log.finished_at = datetime.now()
             raise
+
+    # ==================== 集合竞价数据同步 ====================
+
+    @sync_retry(exceptions=(Exception,))
+    def fetch_call_auction_realtime(self) -> pd.DataFrame:
+        """
+        从 AKShare 获取实时集合竞价数据
+
+        Returns:
+            包含集合竞价数据的 DataFrame
+        """
+        self.rate_limiter.acquire_sync()
+
+        try:
+            # 获取实时行情数据（包含集合竞价时段数据）
+            df = ak.stock_zh_a_spot_em()
+            return df
+        except Exception as e:
+            # 非交易时段获取数据失败是正常现象，降低日志级别
+            logger.info(f"非交易时段，无法获取实时集合竞价数据")
+            # 返回空 DataFrame，不会中断流程
+            return pd.DataFrame()
+
+    async def sync_call_auction_realtime(
+        self,
+        session: AsyncSession
+    ) -> int:
+        """
+        同步实时集合竞价数据到数据库
+
+        Args:
+            session: 数据库会话
+
+        Returns:
+            同步的记录数
+        """
+        sync_log = SyncLog(
+            sync_type="CALL_AUCTION_REALTIME",
+            status="RUNNING",
+            started_at=datetime.now()
+        )
+        session.add(sync_log)
+        await session.flush()
+
+        try:
+            df = self.fetch_call_auction_realtime()
+
+            if df.empty:
+                sync_log.records_count = 0
+                sync_log.status = "SUCCESS"
+                sync_log.finished_at = datetime.now()
+                return 0
+
+            count = 0
+            today = date.today()
+            now = datetime.now()
+            current_hour = now.hour
+            current_minute = now.minute
+            current_time_minutes = current_hour * 60 + current_minute
+
+            # 9:15 = 555 分钟, 15:00 = 900 分钟（下午收盘）
+            is_trading_time = 555 <= current_time_minutes <= 900
+
+            for _, row in df.iterrows():
+                try:
+                    # 获取股票代码（兼容不同的列名）
+                    code = None
+                    for col in ['代码', 'code', 'symbol']:
+                        if col in df.columns:
+                            code = str(row[col]).zfill(6)
+                            break
+
+                    if not code:
+                        continue
+
+                    # 获取价格数据（兼容不同的列名）
+                    price = None
+                    for col in ['最新价', 'price', 'close', 'current_price']:
+                        if col in df.columns:
+                            price = row[col]
+                            break
+
+                    if pd.isna(price) or price == 0:
+                        continue
+
+                    # 获取其他数据
+                    volume = 0
+                    for col in ['成交量', 'volume', 'vol']:
+                        if col in df.columns:
+                            volume = row[col]
+                            break
+
+                    amount = 0
+                    for col in ['成交额', 'amount', 'turnover']:
+                        if col in df.columns:
+                            amount = row[col]
+                            break
+
+                    change_pct = None
+                    for col in ['涨跌幅', 'change_pct', 'percent_change']:
+                        if col in df.columns:
+                            change_pct = row[col]
+                            break
+
+                    # 只在交易时段保存数据
+                    if not is_trading_time:
+                        continue
+
+                    # 记录当前时间
+                    auction_time = now.strftime("%H:%M:%S")
+
+                    stmt = insert(StockCallAuction).values(
+                        code=code,
+                        trade_date=today,
+                        auction_time=auction_time,
+                        price=float(price) if not pd.isna(price) else None,
+                        volume=int(volume) if not pd.isna(volume) and volume else 0,
+                        amount=float(amount) if not pd.isna(amount) and amount else None,
+                        change_pct=float(change_pct) if not pd.isna(change_pct) else None,
+                        data_source="AKShare",
+                        update_time=now
+                    ).on_conflict_do_nothing()
+
+                    await session.execute(stmt)
+                    count += 1
+
+                except Exception as e:
+                    logger.warning(f"处理股票 {code} 数据失败: {e}")
+                    continue
+
+            sync_log.records_count = count
+            sync_log.status = "SUCCESS"
+            sync_log.finished_at = datetime.now()
+
+            return count
+
+        except Exception as e:
+            sync_log.status = "FAILED"
+            sync_log.error_message = str(e)
+            sync_log.finished_at = datetime.now()
+            raise
+
+    @sync_retry(exceptions=(Exception,))
+    def fetch_call_auction_history(
+        self,
+        code: str,
+        date_str: str
+    ) -> pd.DataFrame:
+        """
+        从 AKShare 获取历史集合竞价数据
+
+        Args:
+            code: 股票代码
+            date_str: 日期字符串 (YYYYMMDD)
+
+        Returns:
+            包含集合竞价数据的 DataFrame
+        """
+        self.rate_limiter.acquire_sync()
+
+        try:
+            # 获取盘前分时数据（包含集合竞价时段）
+            df = ak.stock_zh_a_hist_pre_min_em(symbol=code, date=date_str)
+
+            # 筛选集合竞价时段的数据 (9:15-9:25)
+            if not df.empty and "时间" in df.columns:
+                df["时间"] = pd.to_datetime(df["时间"]).dt.time
+                df = df[df["时间"].apply(lambda x: x.hour == 9 and 15 <= x.minute <= 25)]
+
+            return df
+
+        except Exception as e:
+            logger.warning(f"获取股票 {code} 在 {date_str} 的集合竞价数据失败: {e}")
+            return pd.DataFrame()
+
+    async def sync_call_auction_history(
+        self,
+        session: AsyncSession,
+        code: str,
+        trade_date: date
+    ) -> int:
+        """
+        同步历史集合竞价数据到数据库
+
+        Args:
+            session: 数据库会话
+            code: 股票代码
+            trade_date: 交易日期
+
+        Returns:
+            同步的记录数
+        """
+        sync_log = SyncLog(
+            sync_type="CALL_AUCTION_HISTORY",
+            stock_code=code,
+            start_date=trade_date,
+            status="RUNNING",
+            started_at=datetime.now()
+        )
+        session.add(sync_log)
+        await session.flush()
+
+        try:
+            df = self.fetch_call_auction_history(
+                code=code,
+                date_str=trade_date.strftime("%Y%m%d")
+            )
+
+            if df.empty:
+                sync_log.records_count = 0
+                sync_log.status = "SUCCESS"
+                sync_log.finished_at = datetime.now()
+                return 0
+
+            count = 0
+            for _, row in df.iterrows():
+                auction_time = row["时间"].strftime("%H:%M:%S")
+
+                stmt = insert(StockCallAuction).values(
+                    code=code,
+                    trade_date=trade_date,
+                    auction_time=auction_time,
+                    price=row.get("收盘"),
+                    volume=int(row.get("成交量", 0)) if not pd.isna(row.get("成交量")) else 0,
+                    amount=row.get("成交额"),
+                    change_pct=row.get("涨跌幅"),
+                    data_source="AKShare",
+                    update_time=datetime.now()
+                ).on_conflict_do_nothing()
+
+                await session.execute(stmt)
+                count += 1
+
+            sync_log.records_count = count
+            sync_log.status = "SUCCESS"
+            sync_log.finished_at = datetime.now()
+
+            return count
+
+        except Exception as e:
+            sync_log.status = "FAILED"
+            sync_log.error_message = str(e)
+            sync_log.finished_at = datetime.now()
+            raise
+
+    async def sync_call_auction_by_date(
+        self,
+        session: AsyncSession,
+        trade_date: date,
+        codes: Optional[list[str]] = None
+    ) -> dict[str, int]:
+        """
+        批量同步指定日期的集合竞价数据
+
+        Args:
+            session: 数据库会话
+            trade_date: 交易日期
+            codes: 股票代码列表，为空时同步全部股票
+
+        Returns:
+            每只股票同步的记录数 {code: count}
+        """
+        results = {}
+
+        # 如果没有指定股票列表，获取全部活跃股票
+        if codes is None:
+            query = select(StockBasics.code).where(StockBasics.is_active == True)
+            result = await session.execute(query)
+            codes = [row[0] for row in result.all()]
+
+        for code in codes:
+            try:
+                count = await self.sync_call_auction_history(session, code, trade_date)
+                results[code] = count
+            except Exception as e:
+                logger.error(f"同步股票 {code} 的集合竞价数据失败: {e}")
+                results[code] = -1
+
+        return results
 
     async def sync_watchlist_daily_k(
         self,

@@ -118,6 +118,27 @@ CREATE INDEX IF NOT EXISTS idx_sync_logs_time
 CREATE UNIQUE INDEX IF NOT EXISTS idx_indicators_unique 
     ON stock_indicators(code, trade_date, indicator_type);
 
-CREATE INDEX IF NOT EXISTS idx_indicators_code_date 
+CREATE INDEX IF NOT EXISTS idx_indicators_code_date
     ON stock_indicators(code, trade_date DESC);
+
+-- ============================================================
+-- stock_fundamentals 表索引
+-- ============================================================
+CREATE INDEX IF NOT EXISTS idx_fundamentals_code_date
+    ON stock_fundamentals(code, end_date DESC);
+
+CREATE INDEX IF NOT EXISTS idx_fundamentals_date
+    ON stock_fundamentals(end_date DESC);
+
+-- ============================================================
+-- stock_call_auction 表索引
+-- ============================================================
+CREATE INDEX IF NOT EXISTS idx_call_auction_code_date
+    ON stock_call_auction(code, trade_date DESC);
+
+CREATE INDEX IF NOT EXISTS idx_call_auction_date
+    ON stock_call_auction(trade_date DESC);
+
+CREATE INDEX IF NOT EXISTS idx_call_auction_time
+    ON stock_call_auction(auction_time);
 

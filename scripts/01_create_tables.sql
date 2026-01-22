@@ -205,3 +205,135 @@ CREATE TABLE IF NOT EXISTS stock_indicators (
 COMMENT ON TABLE stock_indicators IS '技术指标缓存表';
 COMMENT ON COLUMN stock_indicators.indicator_type IS '指标类型: MA, MACD, RSI, KDJ, BOLL';
 COMMENT ON COLUMN stock_indicators.indicator_data IS 'JSON格式的指标值';
+
+-- ============================================================
+-- 10. 股票基本面数据表
+-- ============================================================
+CREATE TABLE IF NOT EXISTS stock_fundamentals (
+    id                      BIGSERIAL PRIMARY KEY,
+    code                    VARCHAR(10) NOT NULL,
+    end_date                DATE NOT NULL,
+
+    -- 估值指标
+    pe                      DECIMAL(10, 4),
+    pe_ttm                  DECIMAL(10, 4),
+    pb                      DECIMAL(10, 4),
+    ps                      DECIMAL(10, 4),
+    total_market_cap        DECIMAL(18, 4),
+    circulating_market_cap DECIMAL(18, 4),
+    circulating_shares     DECIMAL(18, 4),
+
+    -- 盈利能力
+    eps                     DECIMAL(10, 4),
+    eps_diluted             DECIMAL(10, 4),
+    net_profit_margin       DECIMAL(10, 4),
+    gross_profit_margin     DECIMAL(10, 4),
+    roe                     DECIMAL(10, 4),
+    roa                     DECIMAL(10, 4),
+
+    -- 成长性
+    revenue_yoy             DECIMAL(10, 4),
+    profit_yoy              DECIMAL(10, 4),
+    revenue_qoq             DECIMAL(10, 4),
+    profit_qoq              DECIMAL(10, 4),
+
+    -- 财务健康
+    reserve_per_share       DECIMAL(10, 4),
+    retained_earnings_per_share DECIMAL(10, 4),
+    total_assets            DECIMAL(18, 4),
+    total_liabilities       DECIMAL(18, 4),
+
+    -- 经营指标
+    operating_cash_flow_per_share DECIMAL(10, 4),
+    debt_to_asset_ratio     DECIMAL(10, 4),
+    current_ratio           DECIMAL(10, 4),
+    quick_ratio             DECIMAL(10, 4),
+
+    -- 元数据
+    data_source             VARCHAR(50),
+    update_time             TIMESTAMP WITHOUT TIME ZONE,
+    created_at              TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+    updated_at              TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+
+    CONSTRAINT fk_fundamentals_stock
+        FOREIGN KEY (code) REFERENCES stock_basics(code) ON DELETE CASCADE,
+    CONSTRAINT uq_fundamentals_code_date UNIQUE (code, end_date)
+);
+
+COMMENT ON TABLE stock_fundamentals IS '股票基本面数据表';
+COMMENT ON COLUMN stock_fundamentals.end_date IS '报告期';
+COMMENT ON COLUMN stock_fundamentals.pe IS '市盈率(动态)';
+COMMENT ON COLUMN stock_fundamentals.pe_ttm IS '市盈率(TTM)';
+COMMENT ON COLUMN stock_fundamentals.pb IS '市净率';
+COMMENT ON COLUMN stock_fundamentals.ps IS '市销率';
+COMMENT ON COLUMN stock_fundamentals.total_market_cap IS '总市值(元)';
+COMMENT ON COLUMN stock_fundamentals.circulating_market_cap IS '流通市值(元)';
+COMMENT ON COLUMN stock_fundamentals.circulating_shares IS '流通股本(股)';
+COMMENT ON COLUMN stock_fundamentals.eps IS '每股收益(元)';
+COMMENT ON COLUMN stock_fundamentals.eps_diluted IS '稀释每股收益(元)';
+COMMENT ON COLUMN stock_fundamentals.net_profit_margin IS '销售净利率(%)';
+COMMENT ON COLUMN stock_fundamentals.gross_profit_margin IS '毛利率(%)';
+COMMENT ON COLUMN stock_fundamentals.roe IS '净资产收益率(%)';
+COMMENT ON COLUMN stock_fundamentals.roa IS '总资产收益率(%)';
+COMMENT ON COLUMN stock_fundamentals.revenue_yoy IS '营业收入同比增长(%)';
+COMMENT ON COLUMN stock_fundamentals.profit_yoy IS '净利润同比增长(%)';
+COMMENT ON COLUMN stock_fundamentals.revenue_qoq IS '营业收入环比增长(%)';
+COMMENT ON COLUMN stock_fundamentals.profit_qoq IS '净利润环比增长(%)';
+COMMENT ON COLUMN stock_fundamentals.reserve_per_share IS '每股公积金(元)';
+COMMENT ON COLUMN stock_fundamentals.retained_earnings_per_share IS '每股未分配利润(元)';
+COMMENT ON COLUMN stock_fundamentals.total_assets IS '总资产(元)';
+COMMENT ON COLUMN stock_fundamentals.total_liabilities IS '总负债(元)';
+COMMENT ON COLUMN stock_fundamentals.operating_cash_flow_per_share IS '每股经营现金流(元)';
+COMMENT ON COLUMN stock_fundamentals.debt_to_asset_ratio IS '资产负债率(%)';
+COMMENT ON COLUMN stock_fundamentals.current_ratio IS '流动比率';
+COMMENT ON COLUMN stock_fundamentals.quick_ratio IS '速动比率';
+COMMENT ON COLUMN stock_fundamentals.data_source IS '数据来源';
+COMMENT ON COLUMN stock_fundamentals.update_time IS '数据更新时间';
+
+-- ============================================================
+-- 11. 股票集合竞价数据表
+-- ============================================================
+CREATE TABLE IF NOT EXISTS stock_call_auction (
+    id              BIGSERIAL PRIMARY KEY,
+    code            VARCHAR(10) NOT NULL,
+    trade_date      DATE NOT NULL,
+    auction_time    VARCHAR(8) NOT NULL,
+
+    -- 竞价数据
+    price           DECIMAL(12, 4),
+    volume          BIGINT,
+    amount          DECIMAL(18, 4),
+    buy_volume      BIGINT,
+    sell_volume     BIGINT,
+
+    -- 涨跌信息
+    change_pct      DECIMAL(10, 4),
+    change_amount   DECIMAL(12, 4),
+
+    -- 委比和买卖盘
+    bid_ratio       DECIMAL(10, 4),
+
+    -- 元数据
+    data_source     VARCHAR(50),
+    update_time     TIMESTAMP WITHOUT TIME ZONE,
+    created_at      TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+    updated_at      TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+
+    CONSTRAINT fk_call_auction_stock
+        FOREIGN KEY (code) REFERENCES stock_basics(code) ON DELETE CASCADE,
+    CONSTRAINT uq_call_auction_unique UNIQUE (code, trade_date, auction_time)
+);
+
+COMMENT ON TABLE stock_call_auction IS '股票集合竞价数据表';
+COMMENT ON COLUMN stock_call_auction.trade_date IS '交易日期';
+COMMENT ON COLUMN stock_call_auction.auction_time IS '竞价时间(HH:MM:SS)';
+COMMENT ON COLUMN stock_call_auction.price IS '集合竞价价格';
+COMMENT ON COLUMN stock_call_auction.volume IS '集合竞价成交量(股)';
+COMMENT ON COLUMN stock_call_auction.amount IS '集合竞价成交额(元)';
+COMMENT ON COLUMN stock_call_auction.buy_volume IS '买盘量(股)';
+COMMENT ON COLUMN stock_call_auction.sell_volume IS '卖盘量(股)';
+COMMENT ON COLUMN stock_call_auction.change_pct IS '涨跌幅(%)';
+COMMENT ON COLUMN stock_call_auction.change_amount IS '涨跌额';
+COMMENT ON COLUMN stock_call_auction.bid_ratio IS '委比(%)';
+COMMENT ON COLUMN stock_call_auction.data_source IS '数据来源';
+COMMENT ON COLUMN stock_call_auction.update_time IS '数据更新时间';

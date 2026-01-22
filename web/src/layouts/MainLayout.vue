@@ -13,6 +13,7 @@ import {
   User,
   SwitchButton,
   Document,
+  Odometer,
 } from '@element-plus/icons-vue'
 import { currentUser, isAdmin } from '@/stores/auth'
 import { authApi } from '@/api'
@@ -26,6 +27,7 @@ const menuItems = [
   { path: '/screener', title: '指标选股', icon: Filter },
   { path: '/watchlist', title: '自选股', icon: Star },
   { path: '/backtest', title: '策略回测', icon: Document },
+  { path: '/call-auction', title: '集合竞价', icon: Odometer },
   { path: '/alerts', title: '预警中心', icon: Bell },
 ]
 

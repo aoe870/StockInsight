@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { ref, computed } from 'vue'
-import { ElDatePicker, ElSelect, ElInputNumber, ElButton, ElForm, ElFormItem, ElCheckbox } from 'element-plus'
+import { ElDatePicker, ElSelect, ElInputNumber, ElButton, ElForm, ElFormItem, ElCheckbox, ElInput } from 'element-plus'
 import type { StrategyInfo, StrategyParam } from '@/api/backtest'
 
 interface Props {

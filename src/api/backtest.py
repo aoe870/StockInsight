@@ -11,7 +11,8 @@ from src.schemas.backtest import (
     BacktestResultResponse,
     StrategyInfo
 )
-from src.services.backtest import BacktestEngine, BacktestConfig, DataLoader, StrategyFactory
+from src.services.backtest import BacktestEngine, BacktestConfig, StrategyFactory
+from src.services.backtest.loader import DataLoader
 from src.core.database import get_db
 
 router = APIRouter(prefix="/backtest", tags=["backtest"])
@@ -74,6 +75,16 @@ async def run_backtest(
         if not stock_data:
             raise HTTPException(status_code=400, detail="没有可用的股票数据")
 
+        # 加载基本面数据（如果是基本面策略）
+        fundamental_data = {}
+        if request.strategy_name == "fundamental":
+            # 获取股票代码列表
+            stock_codes = list(stock_data.keys())
+            fundamental_data = await DataLoader.load_fundamental_data(
+                codes=stock_codes,
+                session=db
+            )
+
         # 2. 构建回测配置
         config = BacktestConfig(
             strategy_name=request.strategy_name,
@@ -88,6 +99,7 @@ async def run_backtest(
             hold_days=request.hold_days,
             rebalance_freq=request.rebalance_freq,
             stock_pool=request.stock_pool,
+            fundamental_data=fundamental_data,
         )
 
         # 3. 运行回测

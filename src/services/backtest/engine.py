@@ -34,6 +34,9 @@ class BacktestConfig:
 
     stock_pool: Optional[List[str]] = None
 
+    # 基本面数据（用于基本面选股策略）
+    fundamental_data: Dict[str, Dict[str, Any]] = field(default_factory=dict)
+
 
 @dataclass
 class BacktestResult:
@@ -130,6 +133,11 @@ class BacktestEngine:
 
             strategy_class = StrategyFactory.create(config.strategy_name)
             self.cerebro.addstrategy(strategy_class, **strategy_params)
+
+            # 如果是基本面策略，设置基本面数据
+            strat_instance = self.cerebro.runstrategies(1)[0]
+            if config.strategy_name == 'fundamental' and hasattr(strat_instance, 'set_fundamental_data'):
+                strat_instance.set_fundamental_data(config.fundamental_data)
 
             # 添加分析器
             self.cerebro.addanalyzer(bt.analyzers.SharpeRatio, _name='sharpe')
