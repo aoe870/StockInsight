@@ -68,6 +68,9 @@ class BacktestResult:
     trades: List[Dict] = field(default_factory=list)
     daily_returns: Optional[List[float]] = None
 
+    # K线数据（用于前端展示带交易信号的K线图）
+    kline_data: Dict[str, List[Dict]] = field(default_factory=dict)
+
     # 时间统计
     start_date: str = ""
     end_date: str = ""
@@ -101,10 +104,17 @@ class BacktestEngine:
             self.cerebro.broker.setcash(config.initial_cash)
             self.cerebro.broker.setcommission(commission=config.commission)
 
+            # 保存原始 K 线数据（用于前端展示）
+            self.stock_data_raw = stock_data.copy()
+
             # 添加数据源
             for code, df in stock_data.items():
                 # 获取股票名称（如果 DataFrame 中有）
-                name = df.get('name', [code])[0] if isinstance(df.get('name'), list) else df.get('name', code)
+                name = code  # 默认使用代码
+                if 'name' in df.columns and not df['name'].empty:
+                    name_val = df['name'].iloc[0] if len(df) > 0 else code
+                    if isinstance(name_val, str) and name_val:
+                        name = name_val
 
                 data = DataLoader.df_to_feed(df, code, name)
                 self.cerebro.adddata(data)
@@ -137,10 +147,12 @@ class BacktestEngine:
             return result
 
         except Exception as e:
+            import traceback
+            error_detail = f"{str(e)}\n\n{traceback.format_exc()}"
             return BacktestResult(
                 config=config,
                 status="error",
-                error=str(e),
+                error=error_detail[:500],  # 限制错误信息长度
                 initial_cash=config.initial_cash,
                 final_cash=config.initial_cash,
             )
@@ -226,6 +238,7 @@ class BacktestEngine:
             profit_loss_ratio=profit_loss_ratio,
             equity_curve=self._format_equity_curve(strat.equity_curve) if hasattr(strat, 'equity_curve') else [],
             trades=strat.trades if hasattr(strat, 'trades') else [],
+            kline_data=self._format_kline_data() if hasattr(self, 'stock_data_raw') else {},
             start_date=start_date,
             end_date=end_date,
             trading_days=trading_days,
@@ -244,6 +257,37 @@ class BacktestEngine:
             }
             for item in equity_curve
         ]
+
+    def _format_kline_data(self) -> Dict[str, List[Dict[str, Any]]]:
+        """格式化K线数据用于前端展示"""
+        kline_data = {}
+
+        if not hasattr(self, 'stock_data_raw'):
+            return kline_data
+
+        for code, df in self.stock_data_raw.items():
+            # 确保有日期列
+            if 'trade_date' not in df.columns and 'date' in df.columns:
+                df = df.copy()
+                df['trade_date'] = df['date']
+
+            # 过滤需要的列
+            required_cols = ['trade_date', 'open', 'close', 'high', 'low', 'volume']
+            if all(col in df.columns for col in required_cols):
+                kline_list = []
+                for _, row in df.iterrows():
+                    kline_list.append({
+                        "trade_date": str(row['trade_date']),
+                        "open": float(row['open']),
+                        "close": float(row['close']),
+                        "high": float(row['high']),
+                        "low": float(row['low']),
+                        "volume": float(row['volume']),
+                        "amount": float(row.get('amount', 0)) if 'amount' in row else None,
+                    })
+                kline_data[code] = kline_list
+
+        return kline_data
 
     def optimize(self, config: BacktestConfig, stock_data: Dict[str, Any], **opt_params):
         """
@@ -266,7 +310,11 @@ class BacktestEngine:
 
         # 添加数据源
         for code, df in stock_data.items():
-            name = df.get('name', [code])[0] if 'name' in df else code
+            name = code  # 默认使用代码
+            if 'name' in df.columns and not df['name'].empty:
+                name_val = df['name'].iloc[0] if len(df) > 0 else code
+                if isinstance(name_val, str) and name_val:
+                    name = name_val
             data = DataLoader.df_to_feed(df, code, name)
             self.cerebro.adddata(data)
 

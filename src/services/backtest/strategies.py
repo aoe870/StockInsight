@@ -118,7 +118,9 @@ class StockScreenerStrategy(bt.Strategy):
 
         # 获取当前价格
         price = data.close[0]
-        if price == 0 or not bt.num2price(price):
+        # 检查价格有效性
+        import math
+        if price == 0 or math.isnan(price) or math.isinf(price):
             return False
 
         # 计算买入数量
@@ -169,7 +171,9 @@ class StockScreenerStrategy(bt.Strategy):
 
         # 获取当前价格
         price = data.close[0]
-        if price == 0 or not bt.num2price(price):
+        # 检查价格有效性
+        import math
+        if price == 0 or math.isnan(price) or math.isinf(price):
             del self.position_info[code]
             return
 
@@ -349,10 +353,12 @@ class StrategyFactory:
 
         strategy_class = cls.strategies[strategy_name]
 
-        # 合并参数
+        # 合并参数 - 使用 _getitems() 方法获取 (key, value) 对
         strategy_params = {}
-        for key, value in strategy_class.params._getpairs():
-            strategy_params[key] = value
+        for item in strategy_class.params._getitems():
+            if len(item) >= 2:
+                key, value = item[0], item[1]
+                strategy_params[key] = value
 
         strategy_params.update(params)
 

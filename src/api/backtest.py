@@ -141,6 +141,7 @@ async def run_backtest(
             equity_curve=result.equity_curve,
             trades=formatted_trades,
             daily_returns=result.daily_returns,
+            kline_data=result.kline_data if result.kline_data else None,
             status=result.status,
             error=result.error,
         )

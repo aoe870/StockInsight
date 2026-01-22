@@ -108,7 +108,7 @@ class DataLoader:
             StockDailyK.code == code,
             StockDailyK.trade_date >= start_date,
             StockDailyK.trade_date <= end_date,
-            StockDailyK.adjust_type == "none"  # 使用不复权数据
+            StockDailyK.adjust_type == "qfq"  # 使用前复权数据
         ).order_by(StockDailyK.trade_date)
 
         result = await session.execute(query)

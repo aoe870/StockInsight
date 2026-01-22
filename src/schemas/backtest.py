@@ -89,6 +89,17 @@ class PerformanceMetrics(BaseModel):
     trading_days: int
 
 
+class KLineData(BaseModel):
+    """K线数据"""
+    trade_date: str
+    open: float
+    close: float
+    high: float
+    low: float
+    volume: float
+    amount: Optional[float] = None
+
+
 class BacktestResultResponse(BaseModel):
     """回测结果响应"""
     # 配置
@@ -101,6 +112,9 @@ class BacktestResultResponse(BaseModel):
     equity_curve: List[Dict[str, Any]]  # 资金曲线
     trades: List[TradeRecord]  # 交易记录
     daily_returns: Optional[List[float]] = None  # 每日收益率
+
+    # K线数据（用于绘制带交易信号的K线图）
+    kline_data: Optional[Dict[str, List[KLineData]]] = None  # {code: [K线数据]}
 
     # 状态
     status: str  # success, error

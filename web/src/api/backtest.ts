@@ -50,6 +50,17 @@ export interface TradeRecord {
   profit?: number
 }
 
+// K线数据
+export interface BacktestKLineData {
+  trade_date: string
+  open: number
+  close: number
+  high: number
+  low: number
+  volume: number
+  amount?: number | null
+}
+
 // 绩效指标
 export interface PerformanceMetrics {
   initial_cash: number
@@ -78,6 +89,7 @@ export interface BacktestResultResponse {
   equity_curve: Array<{ date: string; equity: number; cash: number; positions: number }>
   trades: TradeRecord[]
   daily_returns?: number[]
+  kline_data?: Record<string, BacktestKLineData[]> | null  // {code: [K线数据]}
   status: string
   error?: string | null
 }
