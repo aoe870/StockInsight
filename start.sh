@@ -204,6 +204,7 @@ show_help() {
     echo -e "  ${GREEN}dev${NC}          同时启动前后端 (推荐)"
     echo -e "  ${GREEN}install${NC}      安装依赖 (Python + Node.js)"
     echo -e "  ${GREEN}init-db${NC}      初始化数据库 (执行 SQL 脚本)"
+    echo -e "  ${GREEN}health${NC}       健康检查 (检查所有服务状态)"
     echo -e "  ${GREEN}help${NC}         显示此帮助信息"
     echo ""
     echo -e "${CYAN}数据同步说明:${NC}"
@@ -247,7 +248,7 @@ install_all() {
 
 # 主逻辑
 check_python
-#setup_venv
+setup_venv
 check_env
 create_dirs
 
@@ -266,6 +267,9 @@ case "${1:-help}" in
         ;;
     init-db)
         init_db
+        ;;
+    health)
+        python scripts/health_check.py
         ;;
     help|--help|-h)
         show_help

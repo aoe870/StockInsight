@@ -53,6 +53,6 @@ pytest>=7.4.0
 pytest-asyncio>=0.23.0
 pytest-cov>=4.1.0
 
-# Redis (可选，用于缓存和发布订阅)
-# redis>=5.0.0
+# Redis (用于缓存和发布订阅)
+redis>=5.0.0
 
