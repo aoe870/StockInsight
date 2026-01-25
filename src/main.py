@@ -22,6 +22,8 @@ from src.services.auto_sync import auto_sync_service
 from src.services.scheduler import scheduler_service
 from src.core.redis import redis_manager
 from src.services.quote_push import quote_push_service
+from src.api.data_sources import router as data_sources_router
+from src.services.multi_source import init_data_sources
 
 
 @asynccontextmanager
@@ -58,6 +60,24 @@ async def lifespan(app: FastAPI):
     # 启动定时任务调度器
     scheduler_service.start()
     logger.info("定时任务调度器已启动")
+
+    # 初始化多数据源系统
+    init_data_sources()
+    logger.info("多数据源系统已初始化")
+
+    # 数据源健康检查
+    from src.services.multi_source import multi_source_manager
+    try:
+        health_status = await asyncio.wait_for(
+            multi_source_manager.health_check_all(),
+            timeout=10.0
+        )
+        healthy_count = sum(1 for s in health_status.values() if s.available)
+        logger.info(f"数据源健康检查完成: {healthy_count}/{len(health_status)} 可用")
+    except asyncio.TimeoutError:
+        logger.warning("数据源健康检查超时")
+    except Exception as e:
+        logger.warning(f"数据源健康检查失败: {e}")
 
     yield
 
@@ -206,6 +226,9 @@ async def root():
 
 # 注册 API 路由
 app.include_router(api_router)
+
+# 注册数据源管理路由
+app.include_router(data_sources_router)
 
 # 注册 WebSocket 路由
 app.include_router(ws_router, tags=["WebSocket"])
