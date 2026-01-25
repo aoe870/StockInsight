@@ -6,18 +6,26 @@ WORKDIR /app
 # 安装系统依赖
 RUN apt-get update && apt-get install -y \
     gcc \
+    g++ \
     postgresql-client \
     curl \
     && rm -rf /var/lib/apt/lists/*
 
-# 先复制 requirements.txt 进行依赖安装 (利用 Docker 缓存)
-COPY requirements.txt ./
+# 设置环境变量
+ENV PYTHONUNBUFFERED=1 \
+    PYTHONDONTWRITEBYTECODE=1 \
+    PIP_NO_CACHE_DIR=1 \
+    PIP_DISABLE_PIP_VERSION_CHECK=1
+
+# 复制依赖文件
+COPY requirements.txt .
 
 # 安装 Python 依赖
-RUN pip install --no-cache-dir -r requirements.txt
+RUN pip install -r requirements.txt
 
-# 复制数据网关应用代码
-COPY data_gateway/ ./
+# 复制数据网关代码
+COPY data_gateway/src ./src
+COPY data_gateway/scripts ./scripts
 
 # 创建日志目录
 RUN mkdir -p logs
@@ -26,7 +34,7 @@ RUN mkdir -p logs
 EXPOSE 8001
 
 # 健康检查
-HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
+HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \
     CMD curl -f http://localhost:8001/health || exit 1
 
 # 启动命令
