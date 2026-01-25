@@ -1,3 +1,5 @@
+version: '3.8'
+
 services:
   postgres:
     image: postgres:15
@@ -7,6 +9,7 @@ services:
       POSTGRES_USER: ${DB_USER:-root}
       POSTGRES_PASSWORD: ${DB_PASSWORD:-J7aXgk2BJUj=}
       POSTGRES_DB: sapas_db
+      POSTGRES_MULTIPLE_DATABASES: sapas_db,data_gateway
       TZ: Asia/Shanghai
     ports:
       - "${DB_PORT:-5432}:5432"
@@ -14,7 +17,7 @@ services:
       - postgres_data:/var/lib/postgresql/data
       - ./scripts:/docker-entrypoint-initdb.d:ro
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-root} -d sapas_db"]
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-root}"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -36,6 +39,46 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
+
+  # 数据网关服务
+  data-gateway:
+    build:
+      context: .
+      dockerfile: data_gateway/Dockerfile
+    container_name: data-gateway-service
+    restart: unless-stopped
+    ports:
+      - "${DG_PORT:-8001}:8001"
+    environment:
+      - DG_HOST=0.0.0.0
+      - DG_PORT=${DG_PORT:-8001}
+      - DG_DEBUG=${DG_DEBUG:-true}
+      - DG_DATABASE_URL=postgresql+asyncpg://${DB_USER:-root}:${DB_PASSWORD:-J7aXgk2BJUj=}@postgres:5432/data_gateway
+      - DG_DATABASE_SYNC_URL=postgresql://${DB_USER:-root}:${DB_PASSWORD:-J7aXgk2BJUj=}@postgres:5432/data_gateway
+      - DG_REDIS_URL=redis://redis:6379/0
+      - DG_REDIS_MESSAGE_QUEUE=${DG_REDIS_MESSAGE_QUEUE:-data-gateway:queue}
+      - DG_REDIS_QUOTE_CHANNEL_PREFIX=${DG_REDIS_QUOTE_CHANNEL_PREFIX:-quote}
+      - DG_CACHE_TTL_REALTIME=${DG_CACHE_TTL_REALTIME:-5}
+      - DG_CACHE_TTL_KLINE=${DG_CACHE_TTL_KLINE:-60}
+      - DG_AKSHARE_ENABLED=${DG_AKSHARE_ENABLED:-true}
+      - DG_BAOSTOCK_ENABLED=${DG_BAOSTOCK_ENABLED:-true}
+      - DG_RATE_LIMIT_PER_MINUTE=${DG_RATE_LIMIT_PER_MINUTE:-120}
+      - DG_RATE_LIMIT_PER_HOUR=${DG_RATE_LIMIT_PER_HOUR:-1000}
+      - DG_LOG_LEVEL=${DG_LOG_LEVEL:-INFO}
+      - DG_LOG_FILE=${DG_LOG_FILE:-logs/data_gateway.log}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    volumes:
+      - ./data_gateway/logs:/app/logs
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8001/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
 
 volumes:
   postgres_data:

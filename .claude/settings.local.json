@@ -21,7 +21,23 @@
       "Bash(xargs:*)",
       "Bash(dir:*)",
       "Bash(del:*)",
-      "Bash(npm run build:*)"
+      "Bash(npm run build:*)",
+      "Bash(ls:*)",
+      "Bash(psql:*)",
+      "Bash(docker exec:*)",
+      "Bash(# 获取 Windows IP 地址 ip addr show eth0)",
+      "Bash(echo \"=== Available API paths ===\" curl -s \"http://localhost:8001/openapi.json\")",
+      "Bash(python3:*)",
+      "Bash(head -5 echo \"\" echo \"=== Available API paths ===\" curl -s \"http://localhost:8001/openapi.json\")",
+      "Bash(# 查找占用 8001 端口的进程 netstat -ano | grep :8001 || ss -tlnp)",
+      "Bash(ss:*)",
+      "Bash(# 使用 Windows 命令停止占用端口的进程 tasklist.exe)",
+      "Bash(cmd.exe:*)",
+      "Bash(# 验证端口已释放 sleep 2 netstat -ano)",
+      "Bash(# 停止旧服务 netstat -ano)",
+      "Bash(# 检查服务是否在运行 netstat -ano)",
+      "Bash(start.bat:*)",
+      "Bash(ping:*)"
     ]
   }
 }
