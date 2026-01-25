@@ -37,7 +37,17 @@
       "Bash(# 停止旧服务 netstat -ano)",
       "Bash(# 检查服务是否在运行 netstat -ano)",
       "Bash(start.bat:*)",
-      "Bash(ping:*)"
+      "Bash(ping:*)",
+      "Bash(docker build:*)",
+      "Bash(if:*)",
+      "Bash(then echo \"docs exists\")",
+      "Bash(else:*)",
+      "Bash(fi:*)",
+      "Bash(test:*)",
+      "Bash(docker:*)",
+      "Bash(find:*)",
+      "Bash(docker-compose:*)",
+      "Bash(bash -c 'source start_data_gateway.sh 2>&1 | head -20')"
     ]
   }
 }

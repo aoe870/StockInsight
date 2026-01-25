@@ -24,8 +24,8 @@ COPY requirements.txt .
 RUN pip install -r requirements.txt
 
 # 复制数据网关代码
-COPY src ./src
-COPY scripts ./scripts
+COPY data_gateway/src ./src
+COPY data_gateway/scripts ./scripts
 
 # 创建日志目录
 RUN mkdir -p logs
@@ -37,5 +37,5 @@ EXPOSE 8001
 HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \
     CMD curl -f http://localhost:8001/health || exit 1
 
-# 启动命令（直接运行 uvicorn）
+# 启动命令
 CMD ["python", "-m", "uvicorn", "src.main:app", "--host", "0.0.0.0", "--port", "8001"]
