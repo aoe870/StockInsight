@@ -21,7 +21,7 @@ ENV PYTHONUNBUFFERED=1 \
 COPY requirements.txt .
 
 # 安装 Python 依赖
-RUN pip install -r requirements.txt
+RUN pip install -r requirements.txt -i https://pypi.tuna.tsinghua.edu.cn/simple/
 
 # 复制数据网关代码
 COPY src ./src

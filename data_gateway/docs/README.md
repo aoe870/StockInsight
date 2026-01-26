@@ -398,6 +398,121 @@ GET /api/v1/sectors/concept
 }
 ```
 
+### WebSocket API
+
+#### 1. 实时行情推送 (推荐)
+
+**连接方式**:
+```bash
+ws://localhost:8001/ws/quote
+```
+
+**订阅消息格式**:
+```json
+{
+  "action": "subscribe",
+  "symbols": ["000001", "600000"],
+  "market": "cn_a"
+}
+```
+
+**推送消息格式**:
+```json
+{
+  "type": "quote",
+  "symbol": "000001",
+  "name": "平安银行",
+  "price": 11.23,
+  "open": 11.20,
+  "high": 11.30,
+  "low": 11.15,
+  "volume": 12345678,
+  "amount": 138765432.1,
+  "change": 0.05,
+  "change_pct": 0.45,
+  "timestamp": "2026-01-26 10:30:00"
+}
+```
+
+**客户端示例**:
+```javascript
+const ws = new WebSocket("ws://localhost:8001/ws/quote");
+
+ws.onopen = function() {
+  // 订阅股票
+  ws.send(JSON.stringify({
+    action: "subscribe",
+    symbols: ["000001", "600000"],
+    market: "cn_a"
+  }));
+};
+
+ws.onmessage = function(event) {
+  const data = JSON.parse(event.data);
+  console.log("收到行情:", data);
+};
+
+// 发送心跳
+setInterval(() => {
+  ws.send(JSON.stringify({ action: "ping" }));
+}, 30000);
+```
+
+#### 2. 按市场订阅
+
+**连接方式**:
+```bash
+ws://localhost:8001/ws/market/cn_a
+```
+
+**参数**:
+- `market`: 市场代码 (cn_a, hk, us, futures, economic)
+
+#### 3. 按股票列表订阅
+
+**连接方式**:
+```bash
+ws://localhost:8001/ws/symbols?symbols=000001,600000
+```
+
+**参数**:
+- `symbols`: 股票代码，逗号分隔
+
+#### 4. WebSocket 统计
+
+**接口**:
+```bash
+GET /ws/stats
+```
+
+**响应**:
+```json
+{
+  "code": 0,
+  "message": "success",
+  "data": {
+    "total_connections": 10,
+    "total_symbol_subscriptions": 25,
+    "total_market_subscriptions": 3,
+    "symbol_count": 15,
+    "market_count": 3
+  }
+}
+```
+
+#### 5. WebSocket 测试页面
+
+访问以下地址测试 WebSocket 连接：
+```
+http://localhost:8001/ws/test
+```
+
+测试页面功能：
+- 连接/断开 WebSocket
+- 订阅指定股票
+- 发送心跳
+- 查看实时消息
+
 ### 管理 API
 
 #### 创建同步任务
@@ -729,7 +844,6 @@ Windows 下可能出现文件权限问题，请确保：
 |------|-------|------|
 | 分钟K线 | 🔴 高 | 扩展现有K线接口支持分钟级 |
 | 龙虎榜 | 🟡 中 | 需要添加AKShare接口 |
-| WebSocket推送 | 🟡 中 | 实时数据推送 |
 | ETF数据 | 🟢 低 | 建议使用AKShare |
 | 大单交易 | 🟢 低 | 详细的逐笔大单数据 |
 

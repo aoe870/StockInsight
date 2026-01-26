@@ -19,7 +19,9 @@ from src.gateway.manager import gateway_manager
 from src.database import init_database, close_database
 from src.api.routes import router
 from src.api.admin_routes import admin_router
+from src.api.ws_routes import ws_router
 from src.services.scheduler_service import scheduler_service
+from src.services.ws_push_service import ws_push_service
 from src.utils.logger import setup_logger
 
 # 设置日志
@@ -61,6 +63,13 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         logger.error(f"Failed to start scheduler: {e}")
 
+    # 启动 WebSocket 推送服务
+    try:
+        await ws_push_service.start()
+        logger.info("WebSocket push service started successfully")
+    except Exception as e:
+        logger.error(f"Failed to start WebSocket push service: {e}")
+
     logger.info(f"Server running on http://{settings.host}:{settings.port}")
     logger.info(f"API docs: http://{settings.host}:{settings.port}/docs")
     logger.info("")
@@ -70,6 +79,7 @@ async def lifespan(app: FastAPI):
     # 关闭时
     logger.info("Data Gateway Service shutting down...")
     scheduler_service.stop()
+    await ws_push_service.stop()
     await close_database()
 
 
@@ -159,6 +169,7 @@ async def global_exception_handler(request: Request, exc: Exception):
 # 注册路由
 app.include_router(router, tags=["api"])
 app.include_router(admin_router, tags=["admin"])
+app.include_router(ws_router, tags=["websocket"])
 
 
 # 根路径
@@ -181,6 +192,13 @@ async def root():
             "kline": "/api/v1/kline",
             "fundamentals": "/api/v1/fundamentals",
             "health": "/health",
+            "websocket": {
+                "quote": "/ws/quote",
+                "market": "/ws/market/{market}",
+                "symbols": "/ws/symbols",
+                "stats": "/ws/stats",
+                "test": "/ws/test"
+            },
             "admin": {
                 "sync_create": "/api/v1/admin/sync/create",
                 "sync_status": "/api/v1/admin/sync/status/{task_id}",
