@@ -71,7 +71,7 @@ class MianaSource(DataSource):
         if not aiohttp:
             return None
         if self._session is None or self._session.closed:
-            timeout = ClientTimeout(total=30) if aiohttp else 30
+            timeout = aiohttp.ClientTimeout(total=30)
             self._session = aiohttp.ClientSession(timeout=timeout)
         return self._session
 

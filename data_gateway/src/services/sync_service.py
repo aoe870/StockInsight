@@ -178,31 +178,31 @@ class SyncService:
 
         task.total = len(task.symbols)
 
-        async with get_db_session() as session:
-            for idx, symbol in enumerate(task.symbols):
-                if task.is_cancelled():
-                    task.status = SyncStatus.CANCELLED
-                    logger.info(f"Task {task.task_id} was cancelled")
-                    break
+        for idx, symbol in enumerate(task.symbols):
+            if task.is_cancelled():
+                task.status = SyncStatus.CANCELLED
+                logger.info(f"Task {task.task_id} was cancelled")
+                break
 
-                task.current_symbol = symbol
-                task.progress = int((idx / task.total) * 100)
+            task.current_symbol = symbol
+            task.progress = int((idx / task.total) * 100)
 
-                if progress_callback:
-                    await progress_callback(task)
+            if progress_callback:
+                await progress_callback(task)
 
-                try:
-                    # 获取K线数据
-                    klines = await gateway_manager.get_kline(
-                        market=task.market,
-                        symbol=symbol,
-                        period=task.period,
-                        start_date=task.start_date,
-                        end_date=task.end_date
-                    )
+            try:
+                # 获取K线数据
+                klines = await gateway_manager.get_kline(
+                    market=task.market,
+                    symbol=symbol,
+                    period=task.period,
+                    start_date=task.start_date,
+                    end_date=task.end_date
+                )
 
-                    if klines:
-                        # 写入数据库
+                if klines:
+                    # 使用独立的session写入数据库，避免事务问题
+                    async with get_db_session() as session:
                         count = await self._save_klines_to_db(
                             session,
                             symbol,
@@ -213,31 +213,31 @@ class SyncService:
                             task.end_date
                         )
 
-                        results["symbols"][symbol] = {
-                            "status": "success",
-                            "records": count,
-                            "date_range": f"{klines[0].datetime} ~ {klines[-1].datetime}" if klines else ""
-                        }
-                        results["success"] += 1
-                        results["total_records"] += count
-                        logger.info(f"Synced {symbol}: {count} records")
-                    else:
-                        results["symbols"][symbol] = {
-                            "status": "no_data",
-                            "records": 0
-                        }
-                        results["skipped"] += 1
-                        logger.warning(f"No data for {symbol}")
-
-                    await asyncio.sleep(0.1)
-
-                except Exception as e:
                     results["symbols"][symbol] = {
-                        "status": "failed",
-                        "error": str(e)
+                        "status": "success",
+                        "records": count,
+                        "date_range": f"{klines[0].datetime} ~ {klines[-1].datetime}" if klines else ""
                     }
-                    results["failed"] += 1
-                    logger.error(f"Failed to sync {symbol}: {e}")
+                    results["success"] += 1
+                    results["total_records"] += count
+                    logger.info(f"Synced {symbol}: {count} records")
+                else:
+                    results["symbols"][symbol] = {
+                        "status": "no_data",
+                        "records": 0
+                    }
+                    results["skipped"] += 1
+                    logger.warning(f"No data for {symbol}")
+
+                await asyncio.sleep(0.1)
+
+            except Exception as e:
+                results["symbols"][symbol] = {
+                    "status": "failed",
+                    "error": str(e)
+                }
+                results["failed"] += 1
+                logger.error(f"Failed to sync {symbol}: {e}")
 
         task.progress = 100
         return results

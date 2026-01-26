@@ -5,7 +5,7 @@ setlocal enabledelayedexpansion
 
 REM Default configuration
 if "%DG_HOST%"=="" set HOST=0.0.0.0
-if "%DG_PORT%"=="" set PORT=8002
+if "%DG_PORT%"=="" set PORT=8001
 
 echo ============================================================
 echo    Data Gateway Service

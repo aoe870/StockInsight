@@ -45,10 +45,10 @@ class Settings(BaseSettings):
     # 支持的市场
     supported_markets: List[str] = [
         "cn_a",      # A股
-        "hk",        # 港股
-        "us",        # 美股
-        "futures",   # 期货
-        "economic",  # 经济指标
+        # "hk",        # 港股 - 已禁用
+        # "us",        # 美股 - 已禁用
+        # "futures",   # 期货 - 已禁用
+        # "economic",  # 经济指标 - 已禁用
     ]
 
     model_config = SettingsConfigDict(

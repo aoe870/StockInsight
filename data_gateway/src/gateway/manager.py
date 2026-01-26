@@ -15,6 +15,7 @@ from .markets.hk import HKGateway
 from .markets.us import USGateway
 from .markets.futures import FuturesGateway
 from .markets.economic import EconomicGateway
+from ..config import settings
 
 logger = logging.getLogger(__name__)
 
@@ -33,20 +34,25 @@ class DataGatewayManager:
 
         logger.info("Initializing data gateway manager...")
 
-        # 初始化各市场网关
-        self.gateways[Market.CN_A] = ChinaAGateway()
-        self.gateways[Market.HK] = HKGateway()
-        self.gateways[Market.US] = USGateway()
-        self.gateways[Market.FUTURES] = FuturesGateway()
-        self.gateways[Market.ECONOMIC] = EconomicGateway()
+        # 根据配置初始化指定的市场网关
+        market_map = {
+            "cn_a": (Market.CN_A, ChinaAGateway),
+            "hk": (Market.HK, HKGateway),
+            "us": (Market.US, USGateway),
+            "futures": (Market.FUTURES, FuturesGateway),
+            "economic": (Market.ECONOMIC, EconomicGateway),
+        }
 
-        # 启动各网关
-        for market, gateway in self.gateways.items():
-            try:
-                await gateway.initialize()
-                logger.info(f"{market.value} gateway initialized")
-            except Exception as e:
-                logger.error(f"Failed to initialize {market.value}: {e}")
+        for market_name, (market_enum, gateway_class) in market_map.items():
+            if market_name in settings.supported_markets:
+                self.gateways[market_enum] = gateway_class()
+                try:
+                    await self.gateways[market_enum].initialize()
+                    logger.info(f"{market_name} gateway initialized")
+                except Exception as e:
+                    logger.error(f"Failed to initialize {market_name}: {e}")
+            else:
+                logger.info(f"{market_name} gateway disabled by config")
 
         self._initialized = True
         logger.info("Data gateway manager initialized")

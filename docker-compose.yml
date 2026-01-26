@@ -42,7 +42,7 @@ services:
 
   # 数据网关服务
   data-gateway:
-    image: 1172749335/lion:latest
+    image: monstertop/data-gateway:latest
     container_name: data-gateway-service
     restart: unless-stopped
     ports:
