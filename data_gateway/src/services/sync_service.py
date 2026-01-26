@@ -18,6 +18,8 @@ from ..database import get_db_session
 from ..models.kline import CachedKline
 from ..models.stock_daily_k import StockDailyK
 from ..models.sync_log import SyncLog as SyncLogModel
+from ..models.money_flow import MoneyFlow
+from ..models.realtime_quote import RealtimeQuote
 
 logger = logging.getLogger(__name__)
 
@@ -314,6 +316,173 @@ class SyncService:
 
         return len(klines)
 
+    async def _save_money_flow_to_db(
+        self,
+        session: AsyncSession,
+        symbol: str,
+        trade_date: datetime,
+        money_flow_data: Dict,
+        market: str = "cn_a"
+    ) -> bool:
+        """
+        将资金流向数据保存到数据库
+
+        参数:
+            session: 数据库会话
+            symbol: 股票代码
+            trade_date: 交易日期
+            money_flow_data: 资金流向数据（从 Miana 获取）
+            market: 市场代码
+        """
+        try:
+            from datetime import datetime as dt
+
+            # 提取资金流向数据
+            record = {
+                "code": symbol,
+                "trade_date": trade_date,
+                "amount": money_flow_data.get("amount"),
+                "main_net_inflow": money_flow_data.get("main_net_inflow"),
+                "main_net_ratio": money_flow_data.get("main_net_ratio"),
+                # 超大单
+                "super_large_inflow": money_flow_data.get("super_large", {}).get("inflow"),
+                "super_large_outflow": money_flow_data.get("super_large", {}).get("outflow"),
+                "super_large_net_inflow": money_flow_data.get("super_large", {}).get("net_inflow"),
+                "super_large_net_ratio": money_flow_data.get("super_large", {}).get("net_ratio"),
+                # 大单
+                "large_inflow": money_flow_data.get("large", {}).get("inflow"),
+                "large_outflow": money_flow_data.get("large", {}).get("outflow"),
+                "large_net_inflow": money_flow_data.get("large", {}).get("net_inflow"),
+                "large_net_ratio": money_flow_data.get("large", {}).get("net_ratio"),
+                # 中单
+                "medium_inflow": money_flow_data.get("medium", {}).get("inflow"),
+                "medium_outflow": money_flow_data.get("medium", {}).get("outflow"),
+                "medium_net_inflow": money_flow_data.get("medium", {}).get("net_inflow"),
+                "medium_net_ratio": money_flow_data.get("medium", {}).get("net_ratio"),
+                # 小单
+                "small_inflow": money_flow_data.get("small", {}).get("inflow"),
+                "small_outflow": money_flow_data.get("small", {}).get("outflow"),
+                "small_net_inflow": money_flow_data.get("small", {}).get("net_inflow"),
+                "small_net_ratio": money_flow_data.get("small", {}).get("net_ratio"),
+                "market_code": market,
+                "source_code": "miana",
+                "created_at": dt.utcnow(),
+                "updated_at": dt.utcnow()
+            }
+
+            # 使用 PostgreSQL UPSERT 避免重复
+            stmt = insert(MoneyFlow).values(record)
+            stmt = stmt.on_conflict_do_update(
+                index_elements=['code', 'trade_date', 'market_code'],
+                set_={
+                    'amount': stmt.excluded.amount,
+                    'main_net_inflow': stmt.excluded.main_net_inflow,
+                    'main_net_ratio': stmt.excluded.main_net_ratio,
+                    'super_large_inflow': stmt.excluded.super_large_inflow,
+                    'super_large_outflow': stmt.excluded.super_large_outflow,
+                    'super_large_net_inflow': stmt.excluded.super_large_net_inflow,
+                    'super_large_net_ratio': stmt.excluded.super_large_net_ratio,
+                    'large_inflow': stmt.excluded.large_inflow,
+                    'large_outflow': stmt.excluded.large_outflow,
+                    'large_net_inflow': stmt.excluded.large_net_inflow,
+                    'large_net_ratio': stmt.excluded.large_net_ratio,
+                    'medium_inflow': stmt.excluded.medium_inflow,
+                    'medium_outflow': stmt.excluded.medium_outflow,
+                    'medium_net_inflow': stmt.excluded.medium_net_inflow,
+                    'medium_net_ratio': stmt.excluded.medium_net_ratio,
+                    'small_inflow': stmt.excluded.small_inflow,
+                    'small_outflow': stmt.excluded.small_outflow,
+                    'small_net_inflow': stmt.excluded.small_net_inflow,
+                    'small_net_ratio': stmt.excluded.small_net_ratio,
+                    'source_code': stmt.excluded.source_code,
+                    'updated_at': stmt.excluded.updated_at
+                }
+            )
+            await session.execute(stmt)
+            return True
+
+        except Exception as e:
+            logger.error(f"Failed to save money flow data for {symbol}: {e}")
+            return False
+
+    async def sync_money_flow(
+        self,
+        market: str,
+        symbols: List[str],
+        trade_date: Optional[str] = None
+    ) -> Dict:
+        """
+        同步资金流向数据
+
+        参数:
+            market: 市场代码
+            symbols: 股票代码列表
+            trade_date: 交易日期 (YYYY-MM-DD)，默认当天
+
+        返回:
+            同步结果统计
+        """
+        from ..gateway.markets.cn_a import ChinaAGateway
+
+        results = {
+            "success": 0,
+            "failed": 0,
+            "skipped": 0,
+            "total": len(symbols),
+            "symbols": {}
+        }
+
+        # 确定交易日期
+        if trade_date:
+            try:
+                target_date = datetime.strptime(trade_date, "%Y-%m-%d")
+            except ValueError:
+                logger.error(f"Invalid date format: {trade_date}")
+                return {**results, "error": "Invalid date format"}
+        else:
+            target_date = datetime.now()
+
+        gateway = gateway_manager.get_gateway(market)
+        if not isinstance(gateway, ChinaAGateway):
+            logger.warning(f"Money flow sync only available for cn_a market, got {market}")
+            return {**results, "error": "Market not supported"}
+
+        for symbol in symbols:
+            try:
+                # 获取资金流向数据
+                money_flow_data = await gateway.get_money_flow(symbol)
+
+                if money_flow_data:
+                    # 保存到数据库
+                    async with get_db_session() as session:
+                        success = await self._save_money_flow_to_db(
+                            session, symbol, target_date, money_flow_data, market
+                        )
+
+                    if success:
+                        results["success"] += 1
+                        results["symbols"][symbol] = {
+                            "status": "success",
+                            "main_net_inflow": money_flow_data.get("main_net_inflow")
+                        }
+                        logger.info(f"Synced money flow for {symbol}: {money_flow_data.get('main_net_inflow')}")
+                    else:
+                        results["failed"] += 1
+                        results["symbols"][symbol] = {"status": "failed", "error": "save_failed"}
+                else:
+                    results["skipped"] += 1
+                    results["symbols"][symbol] = {"status": "no_data"}
+                    logger.warning(f"No money flow data for {symbol}")
+
+                await asyncio.sleep(0.1)  # 避免请求过快
+
+            except Exception as e:
+                results["failed"] += 1
+                results["symbols"][symbol] = {"status": "failed", "error": str(e)}
+                logger.error(f"Failed to sync money flow for {symbol}: {e}")
+
+        return results
+
     async def cancel_task(self, task_id: str) -> bool:
         """取消任务"""
         if task_id not in self.tasks:
@@ -430,6 +599,211 @@ class SyncService:
         )
 
         return task
+
+    async def _save_realtime_quote_to_db(
+        self,
+        session: AsyncSession,
+        quote_data,
+        market: str = "cn_a"
+    ) -> bool:
+        """
+        将实时行情数据保存到数据库
+
+        参数:
+            session: 数据库会话
+            quote_data: QuoteData 对象
+            market: 市场代码
+        """
+        try:
+            from datetime import datetime as dt
+
+            # 解析交易日期和时间
+            timestamp_str = quote_data.timestamp or dt.now().strftime("%Y-%m-%d %H:%M:%S")
+            trade_date = dt.strptime(timestamp_str, "%Y-%m-%d %H:%M:%S")
+            trade_time = trade_date
+
+            # 提取日期部分用于 trade_date 字段
+            trade_date_only = trade_date.replace(hour=0, minute=0, second=0, microsecond=0)
+
+            # 提取五档盘口数据（如果 QuoteData 有 buys/sells 字段）
+            buys = None
+            sells = None
+            if hasattr(quote_data, 'buys') and quote_data.buys:
+                buys = quote_data.buys
+            if hasattr(quote_data, 'sells') and quote_data.sells:
+                sells = quote_data.sells
+
+            record = {
+                "code": quote_data.symbol,
+                "name": quote_data.name,
+                "trade_date": trade_date_only,
+                "trade_time": trade_time,
+                # 基础行情数据
+                "price": quote_data.price,
+                "open_price": quote_data.open,
+                "high_price": quote_data.high,
+                "low_price": quote_data.low,
+                "volume": quote_data.volume,
+                "amount": quote_data.amount,
+                "change": quote_data.change,
+                "change_pct": quote_data.change_pct,
+                "pre_close": quote_data.pre_close,
+                # 买卖档位
+                "bid_volume": quote_data.bid,
+                "ask_volume": quote_data.ask,
+                "buys": buys,
+                "sells": sells,
+                # 市场数据
+                "high_limit": quote_data.high_limit,
+                "low_limit": quote_data.low_limit,
+                "turnover": quote_data.turnover,
+                "amplitude": quote_data.amplitude,
+                "committee": quote_data.committee,
+                # 估值指标
+                "pe_ttm": quote_data.pe_ttm,
+                "pe_dyn": quote_data.pe_dyn,
+                "pe_static": quote_data.pe_static,
+                "pb": quote_data.pb,
+                # 股本数据
+                "market_value": quote_data.market_value,
+                "circulation_value": quote_data.circulation_value,
+                "circulation_shares": quote_data.circulation_shares,
+                "total_shares": quote_data.total_shares,
+                # 交易所信息
+                "country_code": quote_data.country_code,
+                "exchange_code": quote_data.exchange_code,
+                "market_code": market,
+                "source_code": "miana",
+                "created_at": dt.utcnow()
+            }
+
+            # 使用 PostgreSQL UPSERT 避免重复
+            stmt = insert(RealtimeQuote).values(record)
+            stmt = stmt.on_conflict_do_update(
+                index_elements=['code', 'trade_time', 'market_code'],
+                set_={
+                    'name': stmt.excluded.name,
+                    'price': stmt.excluded.price,
+                    'open_price': stmt.excluded.open_price,
+                    'high_price': stmt.excluded.high_price,
+                    'low_price': stmt.excluded.low_price,
+                    'volume': stmt.excluded.volume,
+                    'amount': stmt.excluded.amount,
+                    'change': stmt.excluded.change,
+                    'change_pct': stmt.excluded.change_pct,
+                    'pre_close': stmt.excluded.pre_close,
+                    'bid_volume': stmt.excluded.bid_volume,
+                    'ask_volume': stmt.excluded.ask_volume,
+                    'buys': stmt.excluded.buys,
+                    'sells': stmt.excluded.sells,
+                    'high_limit': stmt.excluded.high_limit,
+                    'low_limit': stmt.excluded.low_limit,
+                    'turnover': stmt.excluded.turnover,
+                    'amplitude': stmt.excluded.amplitude,
+                    'committee': stmt.excluded.committee,
+                    'pe_ttm': stmt.excluded.pe_ttm,
+                    'pe_dyn': stmt.excluded.pe_dyn,
+                    'pe_static': stmt.excluded.pe_static,
+                    'pb': stmt.excluded.pb,
+                    'market_value': stmt.excluded.market_value,
+                    'circulation_value': stmt.excluded.circulation_value,
+                    'circulation_shares': stmt.excluded.circulation_shares,
+                    'total_shares': stmt.excluded.total_shares,
+                    'country_code': stmt.excluded.country_code,
+                    'exchange_code': stmt.excluded.exchange_code,
+                    'source_code': stmt.excluded.source_code,
+                    'created_at': stmt.excluded.created_at
+                }
+            )
+            await session.execute(stmt)
+            return True
+
+        except Exception as e:
+            logger.error(f"Failed to save realtime quote data: {e}")
+            return False
+
+    async def sync_realtime_quote(
+        self,
+        market: str,
+        symbols: List[str],
+        trade_date: Optional[str] = None
+    ) -> Dict:
+        """
+        同步实时行情数据到数据库
+
+        参数:
+            market: 市场代码
+            symbols: 股票代码列表
+            trade_date: 交易日期 YYYY-MM-DD（用于查询历史），默认当前实时数据
+
+        返回:
+            同步结果统计
+        """
+        from ..gateway.markets.cn_a import ChinaAGateway
+        from ..gateway.base import QuoteData
+
+        results = {
+            "success": 0,
+            "failed": 0,
+            "skipped": 0,
+            "total": len(symbols),
+            "symbols": {}
+        }
+
+        # 确定交易日期
+        target_date = None
+        if trade_date:
+            try:
+                target_date = datetime.strptime(trade_date, "%Y-%m-%d")
+            except ValueError:
+                logger.error(f"Invalid date format: {trade_date}")
+                return {**results, "error": "Invalid date format"}
+        else:
+            target_date = datetime.now()
+
+        gateway = gateway_manager.get_gateway(market)
+        if not gateway:
+            logger.warning(f"Gateway not found for market: {market}")
+            return {**results, "error": "Market not supported"}
+
+        for symbol in symbols:
+            try:
+                # 获取实时行情数据
+                quotes = await gateway.get_quote([symbol])
+
+                if quotes and symbol in quotes:
+                    quote_data = quotes[symbol]
+
+                    # 保存到数据库
+                    async with get_db_session() as session:
+                        success = await self._save_realtime_quote_to_db(
+                            session, quote_data, market
+                        )
+
+                    if success:
+                        results["success"] += 1
+                        results["symbols"][symbol] = {
+                            "status": "success",
+                            "price": quote_data.price,
+                            "change_pct": quote_data.change_pct
+                        }
+                        logger.info(f"Synced realtime quote for {symbol}: {quote_data.price}")
+                    else:
+                        results["failed"] += 1
+                        results["symbols"][symbol] = {"status": "failed", "error": "save_failed"}
+                else:
+                    results["skipped"] += 1
+                    results["symbols"][symbol] = {"status": "no_data"}
+                    logger.warning(f"No realtime quote data for {symbol}")
+
+                await asyncio.sleep(0.1)  # 避免请求过快
+
+            except Exception as e:
+                results["failed"] += 1
+                results["symbols"][symbol] = {"status": "failed", "error": str(e)}
+                logger.error(f"Failed to sync realtime quote for {symbol}: {e}")
+
+        return results
 
 
 # 全局单例

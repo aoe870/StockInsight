@@ -1,5 +1,5 @@
 # ============================================================
-# SAPAS .gitignore
+# Data Gateway .gitignore
 # ============================================================
 
 # Python
@@ -63,11 +63,6 @@ htmlcov/
 coverage.xml
 *.cover
 
-# Node.js (前端)
-web/node_modules/
-web/dist/
-web/.env.local
-
 # OS
 .DS_Store
 Thumbs.db
@@ -77,9 +72,3 @@ Desktop.ini
 *.tmp
 *.temp
 *.bak
-
-# Generated charts
-*.html
-!web/**/*.html
-!docs/**/*.html
-

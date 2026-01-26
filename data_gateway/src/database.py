@@ -56,6 +56,9 @@ async def init_database():
     """初始化数据库（创建表）"""
     from .models.kline import CachedKline
     from .models.sync_log import SyncLog
+    from .models.stock_daily_k import StockDailyK
+    from .models.money_flow import MoneyFlow
+    from .models.realtime_quote import RealtimeQuote
 
     async with engine.begin() as conn:
         # 只在开发环境自动创建表（生产环境应该使用迁移）

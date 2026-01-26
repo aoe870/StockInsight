@@ -180,6 +180,51 @@ GET https://miana.com.cn/api/stock/v2/realtime?token=YOUR_TOKEN&symbol=sh600519,
 ### 8. K线行情
 
 获取股票K线数据。
+## 股票K线接口
+
+| 项目 | 内容 |
+|:---|:---|
+| **接口名称** | 股票K线 |
+| **请求方式** | GET |
+| **接口地址** | `https://miana.com.cn/api/stock/v2/kline` |
+
+### 请求参数
+
+| 参数名 | 类型 | 必填 | 说明 |
+|:---|:---|:---|:---|
+| token | string | * | token，通过登录获取 |
+| symbol | string | * | 股票代码，上证用sh开头，深证用sz开头，北证用bj开头，港股用hk开头，美股用us开头 |
+| type | string | * | k线类型：day（当日1分钟）、day5（最近5个交易日1分钟）、5min（5分钟K线）、10min（10分钟K线）、15min（15分钟K线）、20min（20分钟K线）、30min（30分钟K线）、60min（60分钟K线）、d1（日K）、w1（周K）、m1（月K）、y1（年K） |
+| beginDate | 日期 |  | 起始日期，格式"yyyy-mm-dd hh:mm:ss" |
+| endDate | 日期 |  | 结束日期，格式"yyyy-mm-dd hh:mm:ss" |
+| order | string |  | 顺序：ASC表正序，DESC表倒序（默认在不输入时间为倒序，只输入开始时间为正序，只输入结束时间为倒序，输入开始时间和结束时间为倒序） |
+| limit | 整数 |  | 数量，默认1000（最大为2000） |
+| fq | string |  | 复权：默认不复权（fq表不复权，qfq表示前复权） |
+| format | string |  | 格式，支持json格式和csv格式（默认json格式） |
+
+### 使用说明
+目前5min、10min、30min、60min、90min、120min数字只支持A股不复权数据。
+
+### 适用版本
+按量计费、免费版（不含分钟级数据）、个人版（不含分钟级数据）、专业版、企业版
+
+### 完整示例URL
+
+```
+https://miana.com.cn/api/stock/v2/kline?token=5118a66a405a1278375862efbc69383b&symbol=sh600519&type=day
+```
+
+### 响应字段
+
+| 字段名 | 类型 | 说明 |
+|:---|:---|:---|
+| date | 字符串 | 更新时间 |
+| open | 字符串 | 开盘价格 |
+| high | 字符串 | 最高价 |
+| low | 字符串 | 最低价 |
+| price | 字符串 | 当前价 |
+| volume | 字符串 | 成交量 |
+| amount | 字符串 | 成交额 |
 
 ---
 
@@ -192,7 +237,60 @@ GET https://miana.com.cn/api/stock/v2/realtime?token=YOUR_TOKEN&symbol=sh600519,
 ### 10. 当日资金流向
 
 获取当日资金流向数据。
+```markdown
+## 当日资金流向接口
 
+| 项目 | 内容 |
+|:---|:---|
+| **接口名称** | 当日资金流向 |
+| **请求方式** | GET |
+| **接口地址** | `https://miana.com.cn/api/stock/v1/dailyMoneyflow` |
+
+### 请求参数
+
+| 参数名 | 类型 | 必填 | 说明 |
+|:---|:---|:---|:---|
+| token | string | * | token，通过登录获取 |
+| symbol | string | * | 股票代码，上证用sh开头，深证用sz开头，北证用bj开头 |
+
+### 完整示例URL
+
+```
+https://miana.com.cn/api/stock/v1/dailyMoneyflow?token=5118a66a405a1278375862efbc69383b&symbol=sh600519
+```
+
+### 响应字段
+
+| 字段名 | 类型 | 说明 |
+|:---|:---|:---|
+| amount | 数值 | 成交额 |
+| mianNetInflowAmount | 数值 | Mina净流入金额 |
+| mainNetRatio | 数值 | 主力净流入金额净比 |
+| superLargeInflow | 数值 | 超大单流入金额 |
+| superLargeOutflow | 数值 | 超大单流出金额 |
+| superLargeNetInflowAmount | 数值 | 超大单净流入金额 |
+| superLargeNetRatio | 数值 | 超大单净流入金额净比 |
+| largeInflow | 数值 | 大单流入金额 |
+| largeOutflow | 数值 | 大单流出金额 |
+| largeNetInflowAmount | 数值 | 大单净流入金额 |
+| largeNetRatio | 数值 | 大单净流入金额净比 |
+| mediumInflow | 数值 | 中单流入金额 |
+| mediumOutflow | 数值 | 中单流出金额 |
+| mediumNetInflowAmount | 数值 | 中单净流入金额 |
+| mediumNetRatio | 数值 | 中单净流入金额净比 |
+| smallInflow | 数值 | 小单流入金额 |
+| smallOutflow | 数值 | 小单流出金额 |
+| smallNetInflowAmount | 数值 | 小单净流入金额 |
+| smallNetRatio | 数值 | 小单净流入金额净比 |
+
+**字段说明：**
+- **Mina净流入**: 整体资金净流入/流出
+- **超大单**: 单笔成交额 > 1000万元
+- **大单**: 单笔成交额 500万 - 1000万元
+- **中单**: 单笔成交额 100万 - 500万元
+- **小单**: 单笔成交额 < 100万元
+- **净比**: 单类型净流入金额占整体的比例
+```
 ---
 
 ### 11. 企业数据

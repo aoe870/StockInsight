@@ -50,6 +50,28 @@ class QuoteData:
     timestamp: Optional[str] = None  # 时间戳
     market: Optional[str] = None   # 市场
 
+    # 额外市场数据（Miana/缅A平台提供）
+    pre_close: Optional[float] = None       # 昨收价
+    high_limit: Optional[float] = None       # 涨停价
+    low_limit: Optional[float] = None        # 跌停价
+    turnover: Optional[float] = None        # 换手率
+    pe_ttm: Optional[float] = None         # TTM市盈率
+    pe_dyn: Optional[float] = None         # 动态市盈率
+    pe_static: Optional[float] = None       # 静态市盈率
+    pb: Optional[float] = None              # 市净率
+    amplitude: Optional[float] = None        # 振幅
+    committee: Optional[float] = None        # 委比
+    market_value: Optional[float] = None     # 总市值
+    circulation_value: Optional[float] = None # 流通市值
+    circulation_shares: Optional[float] = None # 流通股本
+    total_shares: Optional[float] = None    # 总股本
+    country_code: Optional[str] = None     # 国家/地区代码
+    exchange_code: Optional[str] = None    # 交易所代码
+
+    # 五档盘口数据
+    buys: Optional[list] = None      # 买盘档位 [[价, 量], ...]
+    sells: Optional[list] = None     # 卖盘档位 [[价, 量], ...]
+
 
 @dataclass
 class KlineData:

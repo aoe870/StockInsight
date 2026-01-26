@@ -40,6 +40,13 @@ class SyncTaskResponse(BaseModel):
     data: Dict = {}
 
 
+class MoneyFlowSyncRequest(BaseModel):
+    """资金流向同步请求"""
+    market: str = "cn_a"
+    symbols: List[str]  # 股票代码列表
+    date: Optional[str] = None  # 交易日期 YYYY-MM-DD，默认当天
+
+
 class TaskListResponse(BaseModel):
     """任务列表响应"""
     code: int = 0
@@ -383,4 +390,230 @@ async def trigger_scheduler_sync(
 
     except Exception as e:
         logger.error(f"Failed to trigger manual sync: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# ============== 资金流向数据同步接口 ==============
+
+@admin_router.post("/money-flow/sync", response_model=SyncTaskResponse)
+async def sync_money_flow(request: MoneyFlowSyncRequest, background_tasks: BackgroundTasks):
+    """
+    同步资金流向数据（缅A平台）
+
+    **同步指定股票列表的资金流向数据到数据库**
+
+    **请求示例:**
+    ```json
+    {
+      "market": "cn_a",
+      "symbols": ["600519", "000001", "000002"],
+      "date": "2026-01-26"
+    }
+    ```
+
+    **数据说明:**
+    - 超大单: 单笔成交额 > 1000万元
+    - 大单: 单笔成交额 500万 - 1000万元
+    - 中单: 单笔成交额 100万 - 500万元
+    - 小单: 单笔成交额 < 100万元
+    """
+    try:
+        async def run_money_flow_sync():
+            """后台执行资金流向同步"""
+            try:
+                result = await sync_service.sync_money_flow(
+                    market=request.market,
+                    symbols=request.symbols,
+                    trade_date=request.date
+                )
+                logger.info(f"Money flow sync completed: {result}")
+            except Exception as e:
+                logger.error(f"Money flow sync failed: {e}")
+
+        # 启动后台任务
+        background_tasks.add_task(run_money_flow_sync)
+
+        return SyncTaskResponse(
+            data={
+                "message": "Money flow sync started",
+                "market": request.market,
+                "symbols_count": len(request.symbols),
+                "date": request.date or "today"
+            }
+        )
+
+    except Exception as e:
+        logger.error(f"Failed to start money flow sync: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@admin_router.get("/money-flow/quick", response_model=SyncTaskResponse)
+async def quick_sync_money_flow(
+    market: str = Query("cn_a", description="市场代码"),
+    limit: int = Query(50, description="同步前N只股票", ge=1, le=500),
+    date: Optional[str] = Query(None, description="交易日期 YYYY-MM-DD，默认当天")
+):
+    """
+    快速同步资金流向数据
+
+    **快速同步指定市场前N只股票的资金流向数据**
+
+    **示例:**
+    - `GET /api/v1/admin/money-flow/quick?market=cn_a&limit=10`
+    """
+    try:
+        # 获取股票列表
+        all_symbols = await sync_service.get_stock_list(market)
+        symbols = all_symbols[:limit]
+
+        if not symbols:
+            return SyncTaskResponse(
+                code=1,
+                message=f"No symbols found for market {market}",
+                data={"market": market, "limit": limit}
+            )
+
+        async def run_money_flow_sync():
+            """后台执行资金流向同步"""
+            try:
+                result = await sync_service.sync_money_flow(
+                    market=market,
+                    symbols=symbols,
+                    trade_date=date
+                )
+                logger.info(f"Money flow quick sync completed: {result}")
+            except Exception as e:
+                logger.error(f"Money flow quick sync failed: {e}")
+
+        # 启动后台任务
+        asyncio.create_task(run_money_flow_sync())
+
+        return SyncTaskResponse(
+            data={
+                "message": f"Quick money flow sync started for {limit} symbols",
+                "market": market,
+                "symbols_count": len(symbols),
+                "date": date or "today"
+            }
+        )
+
+    except Exception as e:
+        logger.error(f"Failed to start quick money flow sync: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# ============== 实时行情数据同步接口 ==============
+
+class RealtimeQuoteSyncRequest(BaseModel):
+    """实时行情同步请求"""
+    market: str = "cn_a"
+    symbols: List[str]  # 股票代码列表
+    trade_date: Optional[str] = None  # 交易日期 YYYY-MM-DD，默认当天
+
+
+@admin_router.post("/realtime-quote/sync", response_model=SyncTaskResponse)
+async def sync_realtime_quote(request: RealtimeQuoteSyncRequest, background_tasks: BackgroundTasks):
+    """
+    同步实时行情数据（缅A平台）
+
+    **同步指定股票列表的实时行情数据到数据库**
+
+    **请求示例:**
+    ```json
+    {
+      "market": "cn_a",
+      "symbols": ["600519", "000001", "000002"],
+      "date": "2026-01-26"
+    }
+    ```
+
+    **数据说明:**
+    - 基础行情: price, open, high, low, volume, amount, change, change_pct
+    - 买卖档位: bid_volume, ask_volume, buys, sells
+    - 市场数据: high_limit, low_limit, turnover, amplitude, committee
+    - 估值指标: pe_ttm, pe_dyn, pe_static, pb
+    - 股本数据: market_value, circulation_value, circulation_shares, total_shares
+    """
+    try:
+        async def run_realtime_quote_sync():
+            """后台执行实时行情同步"""
+            try:
+                result = await sync_service.sync_realtime_quote(
+                    market=request.market,
+                    symbols=request.symbols,
+                    trade_date=request.trade_date
+                )
+                logger.info(f"Realtime quote sync completed: {result}")
+            except Exception as e:
+                logger.error(f"Realtime quote sync failed: {e}")
+
+        # 启动后台任务
+        background_tasks.add_task(run_realtime_quote_sync)
+
+        return SyncTaskResponse(
+            data={
+                "message": "Realtime quote sync started",
+                "market": request.market,
+                "symbols_count": len(request.symbols),
+                "date": request.trade_date or "today"
+            }
+        )
+
+    except Exception as e:
+        logger.error(f"Failed to start realtime quote sync: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@admin_router.get("/realtime-quote/quick", response_model=SyncTaskResponse)
+async def quick_sync_realtime_quote(
+    market: str = Query("cn_a", description="市场代码"),
+    limit: int = Query(50, description="同步前N只股票", ge=1, le=500),
+    date: Optional[str] = Query(None, description="交易日期 YYYY-MM-DD，默认当天")
+):
+    """
+    快速同步实时行情数据
+
+    **快速同步指定市场前N只股票的实时行情数据**
+
+    **示例:**
+    - `GET /api/v1/admin/realtime-quote/quick?market=cn_a&limit=10`
+    """
+    try:
+        # 获取股票列表
+        all_symbols = await sync_service.get_stock_list(market)
+        symbols = all_symbols[:limit]
+
+        if not symbols:
+            return SyncTaskResponse(
+                code=1,
+                message=f"No symbols found for market {market}",
+                data={"market": market, "limit": limit}
+            )
+
+        async def run_realtime_quote_sync():
+            """后台执行实时行情同步"""
+            try:
+                result = await sync_service.sync_realtime_quote(
+                    market=market,
+                    symbols=symbols,
+                    trade_date=date
+                )
+                logger.info(f"Realtime quote quick sync completed: {result}")
+            except Exception as e:
+                logger.error(f"Realtime quote quick sync failed: {e}")
+
+        # 启动后台任务
+        asyncio.create_task(run_realtime_quote_sync())
+
+        return SyncTaskResponse(
+            data={
+                "message": f"Quick realtime quote sync started for {limit} symbols",
+                "market": market,
+                "symbols_count": len(symbols),
+                "date": date or "today"
+            }
+        )
+
+    except Exception as e:
+        logger.error(f"Failed to start quick realtime quote sync: {e}")
         raise HTTPException(status_code=500, detail=str(e))

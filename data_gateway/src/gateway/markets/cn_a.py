@@ -93,26 +93,55 @@ class AKShareSource(DataSource):
 
             def _fetch():
                 try:
-                    period_map = {
-                        "daily": "daily",
-                        "weekly": "weekly",
-                        "monthly": "monthly"
-                    }
                     adj = "qfq"  # 前复权
 
-                    df = ak.stock_zh_a_hist(
-                        symbol=symbol,
-                        period=period_map.get(period, "daily"),
-                        start_date=start_date.replace("-", ""),
-                        end_date=end_date.replace("-", ""),
-                        adjust=adj
-                    )
+                    # 分钟级 K 线使用 AKShare 的分钟数据接口
+                    if period in ["1m", "5m", "15m", "30m", "60m"]:
+                        # 分钟级数据：使用新浪财经的分钟数据（更稳定）
+                        df = ak.stock_zh_a_hist_min_sina(
+                            symbol=symbol,
+                            period=period.replace("m", ""),  # 1, 5, 15, 30, 60
+                            start_date=start_date.replace("-", ""),
+                            end_date=end_date.replace("-", ""),
+                            adjust=adj
+                        )
+                    else:
+                        # 日线及以上：使用东方财经数据（数据更全面）
+                        period_map = {
+                            "daily": "daily",
+                            "weekly": "weekly",
+                            "monthly": "monthly"
+                        }
+                        df = ak.stock_zh_a_hist(
+                            symbol=symbol,
+                            period=period_map.get(period, "daily"),
+                            start_date=start_date.replace("-", ""),
+                            end_date=end_date.replace("-", ""),
+                            adjust=adj
+                        )
 
                     klines = []
                     for _, row in df.iterrows():
+                        # 处理日期列（分钟数据可能有多列）
+                        if period in ["1m", "5m", "15m", "30m", "60m"]:
+                            # 分钟数据：日期格式 "2026-01-26 10:30:00"
+                            dt_str = str(row.index[0]) if hasattr(row.index, 'to_list') else str(row.index)
+                            # 解析日期时间
+                            try:
+                                if ' ' in dt_str:
+                                    dt_obj = datetime.strptime(dt_str, "%Y-%m-%d %H:%M:%S")
+                                    dt_formatted = dt_obj.strftime("%Y-%m-%d %H:%M:%S")
+                                else:
+                                    dt_formatted = dt_str
+                            except ValueError:
+                                dt_formatted = dt_str
+                        else:
+                            # 日线及以上：日期格式 "2026-01-26"
+                            dt_formatted = row['日期'].strftime("%Y-%m-%d")
+
                         klines.append(KlineData(
                             symbol=symbol,
-                            datetime=row['日期'].strftime("%Y-%m-%d"),
+                            datetime=dt_formatted,
                             open=float(row['开盘']),
                             close=float(row['收盘']),
                             high=float(row['最高']),

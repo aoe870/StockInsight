@@ -178,34 +178,48 @@ class MianaSource(DataSource):
     def _parse_quote(self, item: Dict, market: str) -> QuoteData:
         """解析缅A平台的行情数据"""
         try:
+            # 辅助函数：安全转换为浮点数
+            def to_float(val, default=None):
+                try:
+                    return float(val) if val is not None else default
+                except (ValueError, TypeError):
+                    return default
+
             return QuoteData(
                 symbol=self._parse_code(item.get("code")),
                 name=item.get("chineseName") or item.get("name"),
-                price=float(item.get("price", 0)) if item.get("price") else None,
-                open=float(item.get("open", 0)) if item.get("open") else None,
-                high=float(item.get("high", 0)) if item.get("high") else None,
-                low=float(item.get("low", 0)) if item.get("low") else None,
+                price=to_float(item.get("price")),
+                open=to_float(item.get("open")),
+                high=to_float(item.get("high")),
+                low=to_float(item.get("low")),
                 volume=int(item.get("volume", 0)) if item.get("volume") else None,
-                amount=float(item.get("amount", 0)) if item.get("amount") else None,
-                change=float(item.get("change", 0)) if item.get("change") else None,
-                change_pct=float(item.get("changeRate", 0)) if item.get("changeRate") else None,
-                bid=float(item.get("buyVolume", 0)) if item.get("buyVolume") else None,  # 买一量
-                ask=float(item.get("sellVolume", 0)) if item.get("sellVolume") else None,  # 卖一量
+                amount=to_float(item.get("amount")),
+                change=to_float(item.get("change")),
+                change_pct=to_float(item.get("changeRate")),
+                bid=to_float(item.get("buyVolume")),  # 买一量
+                ask=to_float(item.get("sellVolume")),  # 卖一量
                 timestamp=item.get("date"),
                 market=market,
-                # 额外的五档盘口数据
-                extra={
-                    "pre_close": float(item.get("preClose", 0)) if item.get("preClose") else None,
-                    "high_limit": float(item.get("highLimit", 0)) if item.get("highLimit") else None,
-                    "low_limit": float(item.get("lowLimit", 0)) if item.get("lowLimit") else None,
-                    "turnover": float(item.get("turnover", 0)) if item.get("turnover") else None,
-                    "pe_ttm": float(item.get("pe_ttm", 0)) if item.get("pe_ttm") else None,
-                    "pb": float(item.get("pb", 0)) if item.get("pb") else None,
-                    "market_value": item.get("marketValue"),
-                    "circulation_value": item.get("circulationValue"),
-                    "sells": item.get("sells"),  # 卖盘档位 [价, 量]
-                    "buys": item.get("buys"),    # 买盘档位 [价, 量]
-                }
+                # 额外的市场数据
+                pre_close=to_float(item.get("preClose")),
+                high_limit=to_float(item.get("highLimit")),
+                low_limit=to_float(item.get("lowLimit")),
+                turnover=to_float(item.get("turnover")),
+                pe_ttm=to_float(item.get("pe_ttm")),
+                pe_dyn=to_float(item.get("pe_dyn")),
+                pe_static=to_float(item.get("pe_static")),
+                pb=to_float(item.get("pb")),
+                amplitude=to_float(item.get("amplitude")),
+                committee=to_float(item.get("committee")),
+                market_value=to_float(item.get("marketValue")),
+                circulation_value=to_float(item.get("circulationValue")),
+                circulation_shares=to_float(item.get("circulationShares")),
+                total_shares=to_float(item.get("totalShares")),
+                country_code=item.get("countryCode"),
+                exchange_code=item.get("exchangeCode"),
+                # 五档盘口数据
+                buys=item.get("buys"),    # 买盘档位 [[价, 量], ...]
+                sells=item.get("sells"),   # 卖盘档位 [[价, 量], ...]
             )
         except Exception as e:
             logger.error(f"Failed to parse quote data: {e}")
@@ -276,21 +290,61 @@ class MianaSource(DataSource):
 
     def _parse_kline(self, data: Any, symbol: str, period: str, market: str) -> List[KlineData]:
         """解析K线数据"""
-        # 根据实际响应格式解析
-        # 这里需要根据缅A平台的实际响应格式实现
         klines = []
 
-        # TODO: 根据缅A平台实际返回格式实现解析逻辑
-        # 示例：
-        # if isinstance(data, list):
-        #     for item in data:
-        #         klines.append(KlineData(
-        #             symbol=symbol,
-        #             datetime=item["date"],
-        #             open=float(item["open"]),
-        #             close=float(item["close"]),
-        #             ...
-        #         ))
+        try:
+            # 根据实际响应格式解析
+            if isinstance(data, dict) and "data" in data:
+                items = data["data"]
+            elif isinstance(data, list):
+                items = data
+            else:
+                logger.warning(f"Unexpected Mina kline response format: {type(data)}")
+                return []
+
+            if not items:
+                return []
+
+            for item in items:
+                try:
+                    # 解析日期时间（分钟级带时间，日线级只有日期）
+                    date_str = item.get("date") or item.get("datetime", "")
+                    if period in ["1m", "5m", "15m", "30m", "60m"]:
+                        # 分钟级数据可能包含时间
+                        try:
+                            if " " in date_str:
+                                dt_obj = datetime.strptime(date_str, "%Y-%m-%d %H:%M:%S")
+                                dt_formatted = dt_obj.strftime("%Y-%m-%d %H:%M:%S")
+                            else:
+                                dt_formatted = date_str
+                        except ValueError:
+                            dt_formatted = date_str
+                    else:
+                        # 日线及以上
+                        try:
+                            dt_obj = datetime.strptime(date_str, "%Y-%m-%d")
+                            dt_formatted = dt_obj.strftime("%Y-%m-%d")
+                        except ValueError:
+                            dt_formatted = date_str
+
+                    klines.append(KlineData(
+                        symbol=symbol,
+                        datetime=dt_formatted,
+                        open=float(item.get("open", 0)),
+                        close=float(item.get("close", 0)),
+                        high=float(item.get("high", 0)),
+                        low=float(item.get("low", 0)),
+                        volume=int(item.get("volume", 0)),
+                        amount=float(item.get("amount", 0)) if item.get("amount") else None,
+                        period=period,
+                        market=market
+                    ))
+                except (ValueError, TypeError, KeyError) as e:
+                    logger.warning(f"Failed to parse kline item {item}: {e}")
+                    continue
+
+        except Exception as e:
+            logger.error(f"Error parsing Mina kline data: {e}")
 
         return klines
 
@@ -311,10 +365,21 @@ class MianaSource(DataSource):
         获取当日资金流向数据
 
         缅A平台提供的资金流向数据包括：
-        - 大单净流入
-        - 中单净流入
-        - 小单净流入
-        - 资金流向排名
+        - 成交额 amount
+        - Mina净流入 mianNetInflowAmount
+        - 主力净流入金额净比 mainNetRatio
+        - 超大单流入/流出/净流入/净比
+        - 大单流入/流出/净流入/净比
+        - 中单流入/流出/净流入/净比
+        - 小单流入/流出/净流入/净比
+
+        单笔成交额分类:
+        - 超大单: > 1000万元
+        - 大单: 500万 - 1000万元
+        - 中单: 100万 - 500万元
+        - 小单: < 100万元
+
+        API文档: https://miana.com.cn/api/stock/v1/dailyMoneyflow
         """
         if not self.enabled:
             return None
@@ -328,20 +393,21 @@ class MianaSource(DataSource):
 
             formatted_symbol = self._format_symbol(symbol, market)
 
-            # API endpoint: /stock/v2/money-flow (推测)
-            # 实际endpoint需要根据文档确认
+            # API endpoint: /stock/v1/dailyMoneyflow
             params = {
                 "token": self.token,
-                "symbol": formatted_symbol,
-                "date": date or datetime.now().strftime("%Y-%m-%d")
+                "symbol": formatted_symbol
             }
+            # 注意：接口不需要date参数，返回当日数据
 
             async with session.get(
-                f"{self.BASE_URL}/stock/v2/money-flow",
+                f"{self.BASE_URL}/stock/v1/dailyMoneyflow",
                 params=params
             ) as response:
                 if response.status == 200:
-                    return await response.json()
+                    data = await response.json()
+                    # 解析资金流向数据
+                    return self._parse_money_flow(data, symbol)
                 else:
                     logger.error(f"Miana money flow API error: {response.status}")
                     return None
@@ -349,6 +415,78 @@ class MianaSource(DataSource):
         except Exception as e:
             logger.error(f"Miana get_money_flow error: {e}")
             return None
+
+    def _parse_money_flow(self, data: Dict[str, Any], symbol: str) -> Dict[str, Any]:
+        """
+        解析资金流向响应数据
+
+        标准化字段返回:
+        {
+            "symbol": 股票代码,
+            "amount": 成交额,
+            "main_net_inflow": 主力净流入金额,
+            "main_net_ratio": 主力净流入金额净比,
+            "super_large": {
+                "inflow": 超大单流入金额,
+                "outflow": 超大单流出金额,
+                "net_inflow": 超大单净流入金额,
+                "net_ratio": 超大单净流入金额净比
+            },
+            "large": {
+                "inflow": 大单流入金额,
+                "outflow": 大单流出金额,
+                "net_inflow": 大单净流入金额,
+                "net_ratio": 大单净流入金额净比
+            },
+            "medium": {
+                "inflow": 中单流入金额,
+                "outflow": 中单流出金额,
+                "net_inflow": 中单净流入金额,
+                "net_ratio": 中单净流入金额净比
+            },
+            "small": {
+                "inflow": 小单流入金额,
+                "outflow": 小单流出金额,
+                "net_inflow": 小单净流入金额,
+                "net_ratio": 小单净流入金额净比
+            }
+        }
+        """
+        try:
+            # 直接返回标准化后的数据
+            return {
+                "symbol": self._parse_code(symbol) if symbol.startswith(("sh", "sz", "bj")) else symbol,
+                "amount": data.get("amount"),
+                "main_net_inflow": data.get("mianNetInflowAmount"),
+                "main_net_ratio": data.get("mainNetRatio"),
+                "super_large": {
+                    "inflow": data.get("superLargeInflow"),
+                    "outflow": data.get("superLargeOutflow"),
+                    "net_inflow": data.get("superLargeNetInflowAmount"),
+                    "net_ratio": data.get("superLargeNetRatio")
+                },
+                "large": {
+                    "inflow": data.get("largeInflow"),
+                    "outflow": data.get("largeOutflow"),
+                    "net_inflow": data.get("largeNetInflowAmount"),
+                    "net_ratio": data.get("largeNetRatio")
+                },
+                "medium": {
+                    "inflow": data.get("mediumInflow"),
+                    "outflow": data.get("mediumOutflow"),
+                    "net_inflow": data.get("mediumNetInflowAmount"),
+                    "net_ratio": data.get("mediumNetRatio")
+                },
+                "small": {
+                    "inflow": data.get("smallInflow"),
+                    "outflow": data.get("smallOutflow"),
+                    "net_inflow": data.get("smallNetInflowAmount"),
+                    "net_ratio": data.get("smallNetRatio")
+                }
+            }
+        except Exception as e:
+            logger.error(f"Failed to parse money flow data: {e}")
+            return {}
 
     async def get_sector_realtime(self, sector_type: str = "industry") -> List[Dict[str, Any]]:
         """

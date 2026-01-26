@@ -250,6 +250,14 @@ GET /api/v1/kline?market=cn_a&symbol=000001&period=daily&start_date=2025-01-01&e
 - `market`: 市场代码 (cn_a, hk, us, futures, economic)
 - `symbol`: 股票代码
 - `period`: 周期 (1m, 5m, 15m, 30m, 60m, daily, weekly, monthly)
+  - **1m**: 分时（1分钟K线）
+  - **5m**: 5分钟K线（5日K线）
+  - **15m**: 15分钟K线
+  - **30m**: 30分钟K线
+  - **60m**: 60分钟K线
+  - **daily**: 日K线（10日K线）
+  - **weekly**: 周K线
+  - **monthly**: 月K线
 - `start_date`: 开始日期 YYYY-MM-DD
 - `end_date`: 结束日期 YYYY-MM-DD
 
@@ -830,19 +838,19 @@ Windows 下可能出现文件权限问题，请确保：
 | 功能模块 | 支持情况 | 数据源 |
 |---------|---------|--------|
 | 实时行情 | ✅ 完整支持 | AKShare + Miana |
-| K线数据 | ✅ 完整支持 | AKShare + BaoStock + Miana |
+| K线数据 | ✅ 完整支持 | AKShare + BaoStock + Mina |
 | 基本面数据 | ✅ 完整支持 | BaoStock |
 | 资金流向 | ✅ 完整支持 | Miana |
-| 板块数据 | ✅ 完整支持 | Miana |
-| 五档盘口 | ✅ 完整支持 | Miana |
+| 板块数据 | ✅ 完整支持 | Mina |
+| 五档盘口 | ✅ 完整支持 | Mina |
 | 数据同步 | ✅ 完整支持 | BaoStock |
 | 健康监控 | ✅ 完整支持 | 内置 |
+| WebSocket推送 | ✅ 完整支持 | Redis 订阅 |
 
 ### 待开发功能
 
 | 功能 | 优先级 | 说明 |
 |------|-------|------|
-| 分钟K线 | 🔴 高 | 扩展现有K线接口支持分钟级 |
 | 龙虎榜 | 🟡 中 | 需要添加AKShare接口 |
 | ETF数据 | 🟢 低 | 建议使用AKShare |
 | 大单交易 | 🟢 低 | 详细的逐笔大单数据 |

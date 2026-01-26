@@ -47,7 +47,17 @@
       "Bash(docker:*)",
       "Bash(find:*)",
       "Bash(docker-compose:*)",
-      "Bash(bash -c 'source start_data_gateway.sh 2>&1 | head -20')"
+      "Bash(bash -c 'source start_data_gateway.sh 2>&1 | head -20')",
+      "Bash(参数名)",
+      "Bash(类型)",
+      "Bash(必填)",
+      "Bash(说明)",
+      "Bash('\\)\nnew_section.append\\(')",
+      "Bash(token)",
+      "Bash(字符串)",
+      "Bash(是)",
+      "Bash(通过登录获取的Token)",
+      "Bash(否)"
     ]
   }
 }
