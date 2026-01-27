@@ -1,0 +1,102 @@
+version: '3.8'
+
+services:
+  # PostgreSQL 数据库
+  postgres:
+    image: postgres:15
+    container_name: sapas-db
+    environment:
+      POSTGRES_DB: sapas_db
+      POSTGRES_USER: root
+      POSTGRES_PASSWORD: postgres
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    ports:
+      - "5433:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U root"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - sapas-network
+
+  # Redis 缓存
+  redis:
+    image: redis:7.0-alpine
+    container_name: sapas-redis
+    ports:
+      - "6380:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - sapas-network
+
+  # SAPAS 后端
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: sapas-backend
+    environment:
+      APP_NAME: SAPAS
+      APP_ENV: production
+      DATA_GATEWAY_URL: http://data-gateway:8001
+      DATABASE_URL: postgresql+asyncpg://root:postgres@postgres:5432/sapas_db
+      REDIS_URL: redis://redis:6379/0
+      JWT_SECRET_KEY: ${JWT_SECRET_KEY:-sapas-jwt-secret-change-in-production}
+      CORS_ORIGINS: http://localhost:80,http://localhost:5173
+      LOG_LEVEL: INFO
+    ports:
+      - "8082:8082"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - sapas-network
+    restart: unless-stopped
+
+  # SAPAS 前端
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: sapas-frontend
+    ports:
+      - "80:80"
+    depends_on:
+      - backend
+    networks:
+      - sapas-network
+    restart: unless-stopped
+
+  # 数据网关 (使用已存在的服务)
+  data-gateway:
+    image: data-gateway:latest
+    container_name: sapas-data-gateway
+    ports:
+      - "8001:8001"
+    volumes:
+      - ./data:/app/data
+    environment:
+      APP_ENV: production
+    networks:
+      - sapas-network
+    restart: unless-stopped
+
+volumes:
+  postgres_data:
+    driver: local
+  redis_data:
+    driver: local
+
+networks:
+  sapas-network:
+    driver: bridge

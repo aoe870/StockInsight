@@ -57,7 +57,17 @@
       "Bash(字符串)",
       "Bash(是)",
       "Bash(通过登录获取的Token)",
-      "Bash(否)"
+      "Bash(否)",
+      "Bash(make:*)",
+      "Bash(where:*)",
+      "Bash(bash:*)",
+      "Bash(cmd:*)",
+      "Bash(/c/Users/lion/AppData/Local/Microsoft/WindowsApps/python/venv/Scripts/activate:*)",
+      "Bash(./venv/Scripts/activate:*)",
+      "Bash(.venvScriptsactivate)",
+      "Bash(uv pip install:*)",
+      "Bash(\".\\\\venv\\\\Scripts\\\\activate\")",
+      "Bash(./start.sh:*)"
     ]
   }
 }
